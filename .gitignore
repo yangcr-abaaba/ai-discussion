@@ -1,0 +1,19 @@
+# 依赖（别人 npm install 自动装，不入库）
+node_modules/
+
+# 打包产物（安装包走 Releases，不入库）
+dist/
+
+# 用户运行时生成的本地数据（不属于源码）
+config/prompts.json
+config/ui-state.json
+
+# 开发版临时启动器（含本机绝对路径，不可移植）
+*.lnk
+
+# 日志 / 系统杂项 / 备份文件
+*.log
+npm-debug.log*
+*.bak
+.DS_Store
+Thumbs.db

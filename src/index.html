@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <title>AI讨论会</title>
+  <!--
+    ========================================================================
+    index.html —— 主窗口的界面（结构 + 全部样式都在这一个文件里）
+    交互逻辑全部在同目录的 renderer.js。整体布局（从上到下）：
+      · #titlebar           自定义标题栏：产品图标+名称 / 教程按钮（原生窗口按钮在右上覆盖层）
+      · #views              多栏 AI 区：每个 AI 一栏 <webview>，由 renderer.js 动态创建
+      · #composer           底部“输入区”（展开态）：左=输入面板(AI选择/输入框/Google/自动讨论/发送)，
+                            右=提示词面板(右上角缺口里有“收起”按钮)
+      · #composerCollapsed  底部“输入区”（收起态）：只剩右下角 Google / 提示词管理 / 展开 三个按钮
+      · #pmModal            提示词管理弹层（两页签：抬头提示词 / 常规提示词；增删改查+启用+拖动排序）
+      · #tutorialModal      教程弹层（产品简介 / 核心特点 / 使用指南 / 致谢，内容同 README）
+      · #confirmModal       通用二次确认弹层（删除提示词时用）
+    说明：未引入任何 UI 框架/图标字体；图标用内联 SVG，少量符号用 Unicode。配色见下方 CSS 注释。
+    ========================================================================
+  -->
+  <style>
+    html, body { margin: 0; height: 100%; font-family: system-ui, "Microsoft YaHei", sans-serif; }
+    body { display: flex; flex-direction: column; background: #fff; }
+
+    /* ===== 上方：多栏 AI（每栏带细栏头）===== */
+    #views { flex: 1 1 auto; min-height: 0; display: flex; }
+    .col { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; border-right: 1px solid #ececec; }
+    .col:last-child { border-right: 0; }
+    .col > webview { flex: 1 1 auto; min-height: 0; border: 0; }
+    .col-head { flex: 0 0 auto; height: 30px; display: flex; align-items: center; justify-content: space-between; padding: 0 6px 0 10px; background: #fafafa; border-bottom: 1px solid #f0f0f0; }
+    .col-name { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #52525b; }
+    .col-dot { width: 7px; height: 7px; border-radius: 50%; background: #4f46e5; }
+    .col-tools { display: flex; align-items: center; gap: 2px; }
+    .col-tool { width: 24px; height: 24px; padding: 0; display: flex; align-items: center; justify-content: center; border: 0; background: none; color: #a1a1aa; cursor: pointer; border-radius: 6px; }
+    .col-tool:hover { background: #ececef; color: #52525b; }
+    #views.maximized > .col { display: none; }
+    #views.maximized > .col.max { display: flex; }
+
+    /* ===== Google 按钮（展开态/收起态共用样式）===== */
+    .google-btn { display: inline-flex; align-items: center; gap: 7px; height: 32px; padding: 0 12px 0 7px; font-size: 12px; color: #3f3f46; background: #fff; border: 1px solid #d4d4d8; border-radius: 999px; cursor: pointer; }
+    .google-btn:hover { border-color: #6366f1; }
+    .google-btn .g-logo { display: flex; align-items: center; }
+    .g-status { display: inline-flex; align-items: center; gap: 5px; }
+    .g-status .g-dot { width: 7px; height: 7px; border-radius: 50%; background: #a1a1aa; }
+    .g-status .g-text { color: #a1a1aa; }
+
+    /* ===== 收起态：右下角三个独立按钮 ===== */
+    #composerCollapsed { flex: 0 0 auto; display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: #f4f4f5; border-top: 1px solid #e4e4e7; }
+    #composerCollapsed.hidden { display: none; }
+    .cbar-spacer { flex: 1; }
+    .cbar-btn { font-size: 12px; color: #3f3f46; background: #fff; border: 1px solid #d4d4d8; border-radius: 8px; padding: 6px 14px; cursor: pointer; }
+    .cbar-btn:hover { border-color: #6366f1; }
+    .icon-btn { width: 40px; height: 30px; padding: 0; background: #fff; border: 1px solid #c7d2fe; border-radius: 8px; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; }
+    .icon-btn:hover { background: #eef2ff; }
+
+    /* ===== 展开态：输入面板（左）+ 提示词面板（右）===== */
+    #composer { flex: 0 0 auto; display: flex; flex-direction: column; background: #f4f4f5; border-top: 1px solid #e4e4e7; }
+    #composer.hidden { display: none; }
+    /* 顶部拖动把手：上下拖可调整整块输入区高度 */
+    #composerResize { flex: 0 0 auto; height: 9px; display: flex; align-items: center; justify-content: center; cursor: ns-resize; }
+    #composerResize::before { content: ''; width: 38px; height: 3px; border-radius: 2px; background: #d4d4d8; }
+    #composerResize:hover::before { background: #a1a1aa; }
+    #composerMain { display: flex; gap: 10px; align-items: stretch; padding: 1px 12px 10px; height: 165px; box-sizing: border-box; }
+    .panel { background: #fff; border: 1px solid #d4d4d8; border-radius: 12px; box-sizing: border-box; }
+
+    /* —— 左：输入面板 —— */
+    #inputPanel { flex: 1.7 1 0; min-width: 0; padding: 10px 12px; display: flex; flex-direction: column; gap: 9px; }
+    #ai-row { position: relative; flex: 0 0 auto; display: flex; align-items: center; gap: 6px; }
+    #aiPicker { display: inline-flex; align-items: center; gap: 7px; height: 28px; padding: 0 11px; font-size: 12px; color: #3f3f46; background: #fff; border: 1px solid #d4d4d8; border-radius: 999px; cursor: pointer; }
+    #aiPicker:hover { border-color: #6366f1; }
+    .ai-caret { font-size: 11px; color: #71717a; }
+    #aiMenu { position: absolute; left: 0; bottom: calc(100% + 6px); z-index: 30; width: 330px; max-width: 84vw; max-height: 230px; overflow: auto; background: #fff; border: 1px solid #e4e4e7; border-radius: 10px; padding: 10px; box-shadow: 0 6px 24px rgba(0,0,0,.14); }
+    #aiMenu.hidden { display: none; }
+    .lbl { font-size: 11px; color: #a1a1aa; }
+    #ai-toggles { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+    .chip { display: inline-flex; align-items: center; gap: 5px; padding: 4px 11px; font-size: 12px; cursor: pointer; user-select: none; border-radius: 999px; border: 1px solid #d4d4d8; background: #fff; color: #52525b; }
+    .chip:hover { border-color: #6366f1; }
+    .chip.on { background: #4f46e5; border-color: #4f46e5; color: #fff; }
+    .chip.on:hover { background: #4338ca; }
+    .chip:disabled { opacity: .45; cursor: default; }
+    .chip-dot { width: 6px; height: 6px; border-radius: 50%; background: #d4d4d8; }
+    .chip.on .chip-dot { background: #a5b4fc; }
+    #ai-count { font-size: 12px; color: #4f46e5; font-weight: 500; }
+
+    /* 输入框：固定高度（由外层输入区高度决定），文字过多内部滚动，不随字数变高 */
+    #msg { width: 100%; box-sizing: border-box; flex: 1 1 auto; min-height: 0; border: 0; padding: 0; font-size: 14px; line-height: 1.6; font-family: inherit; resize: none; outline: none; background: transparent; color: #27272a; overflow-y: auto; }
+    #msg::placeholder { color: #a1a1aa; }
+
+    #inputActions { flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+    #rightActions { display: flex; align-items: center; gap: 8px; }
+
+    #discuss { display: inline-flex; align-items: center; gap: 7px; height: 32px; padding: 0 13px; font-size: 13px; cursor: pointer; border: 1px solid #ea580c; border-radius: 9px; background: #fff; color: #ea580c; }
+    #discuss:hover { background: #fff7ed; }
+    #sendGroup { position: relative; display: flex; align-items: stretch; }
+    #send { height: 32px; padding: 0 16px; font-size: 13px; cursor: pointer; border: 0; border-radius: 9px 0 0 9px; background: #4f46e5; color: #fff; }
+    #send:hover { background: #4338ca; }
+    #sendOpts { height: 32px; padding: 0 9px; font-size: 13px; cursor: pointer; color: #fff; background: #4f46e5; border: 0; border-left: 1px solid rgba(255,255,255,.35); border-radius: 0 9px 9px 0; }
+    #sendOpts:hover { background: #4338ca; }
+    button:disabled { opacity: .5; cursor: default; }
+    #sendMenu { position: absolute; bottom: 40px; right: 0; z-index: 20; min-width: 220px; background: #fff; border: 1px solid #e4e4e7; border-radius: 8px; padding: 4px; box-shadow: 0 6px 20px rgba(0,0,0,.12); }
+    #sendMenu.hidden { display: none; }
+    #sendMenu button { display: flex; align-items: center; gap: 6px; width: 100%; text-align: left; background: none; border: 0; border-radius: 6px; padding: 8px 10px; font-size: 13px; color: #27272a; cursor: pointer; }
+    #sendMenu button:hover { background: #f4f4f5; }
+    #sendMenu .tick { width: 14px; flex: 0 0 auto; color: #4f46e5; visibility: hidden; }
+    #sendMenu button.active .tick { visibility: visible; }
+
+    /* —— 右：提示词面板（边框用 SVG 画出右上角缺口；收起按钮嵌在缺口里）—— */
+    #promptPanel { flex: 1 1 0; min-width: 0; position: relative; }
+    #ppBorder { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+    .notch-btn { position: absolute; top: 5px; right: 7px; width: 34px; height: 20px; padding: 0; background: #fff; border: 1px solid #d4d4d8; border-radius: 6px; display: flex; align-items: center; justify-content: center; cursor: pointer; z-index: 3; }
+    .notch-btn:hover { border-color: #a1a1aa; background: #fafafa; }
+    #ppInner { position: absolute; inset: 0; padding: 11px 13px; display: flex; flex-direction: column; gap: 8px; box-sizing: border-box; }
+    #pp-head { flex: 0 0 auto; display: flex; align-items: center; gap: 8px; padding-right: 58px; }
+    #pp-head .pp-h-title { font-size: 13px; color: #27272a; font-weight: 500; }
+    #pmManage { font-size: 12px; color: #4f46e5; background: #fff; border: 1px solid #c7d2fe; border-radius: 7px; padding: 3px 10px; cursor: pointer; }
+    #pmManage:hover { background: #eef2ff; }
+    #pp-list { flex: 1 1 auto; overflow: auto; display: flex; flex-direction: column; gap: 8px; }
+    .pp-card { border: 1px solid #e4e4e7; border-radius: 8px; padding: 7px 9px; cursor: pointer; }
+    .pp-card:hover { border-color: #6366f1; background: #fafaff; }
+    .pp-card.header-rule { background: #faf5ff; border-color: #e9d5ff; }
+    .pp-card.header-rule:hover { border-color: #c4b5fd; background: #f5edff; }
+    .pp-name { font-size: 12px; color: #27272a; font-weight: 500; }
+    .header-rule .pp-name { color: #6d28d9; }
+    .pp-text { font-size: 11px; color: #71717a; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .header-rule .pp-text { color: #a78bda; }
+    .pp-empty { font-size: 11px; color: #a1a1aa; padding: 8px 2px; line-height: 1.6; }
+
+    /* ===== 提示词管理弹层 ===== */
+    #pmModal { position: fixed; inset: 0; z-index: 100; background: rgba(0,0,0,.45); display: flex; align-items: center; justify-content: center; }
+    #pmModal.hidden { display: none; }
+    .pm-panel { width: 1100px; max-width: 92%; height: 80%; max-height: 88%; background: #fff; border-radius: 12px; display: flex; flex-direction: column; overflow: hidden; }
+    .pm-head { flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; background: #f4f4f5; border-bottom: 1px solid #e4e4e7; font-size: 14px; color: #27272a; }
+    .pm-head button { background: none; border: 0; font-size: 15px; color: #71717a; cursor: pointer; }
+    .pm-head button:hover { color: #27272a; }
+    .pm-body { flex: 1 1 auto; display: flex; min-height: 0; }
+    .pm-tabs { flex: 0 0 172px; border-right: 1px solid #e4e4e7; background: #fafafa; padding: 12px 10px; display: flex; flex-direction: column; gap: 6px; }
+    .pm-tab { text-align: left; font-size: 13px; color: #3f3f46; border: 1px solid #e4e4e7; border-radius: 8px; padding: 9px 10px; background: #fff; cursor: pointer; line-height: 1.4; }
+    .pm-tab:hover { border-color: #6366f1; }
+    .pm-tab.active { color: #4f46e5; border-color: #4f46e5; background: #eef2ff; font-weight: 500; }
+    .pm-tabs-hint { margin-top: auto; font-size: 11px; color: #a1a1aa; line-height: 1.6; }
+    .pm-content { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; padding: 14px 16px; gap: 10px; }
+    .pm-content-head { display: flex; align-items: center; justify-content: space-between; }
+    .pm-ch-left { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
+    #pmContentTitle { font-size: 13px; color: #27272a; font-weight: 500; }
+    #pmContentHint { font-size: 12px; color: #a1a1aa; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    #pmAddRow { font-size: 12px; color: #fff; background: #4f46e5; border: 0; border-radius: 8px; padding: 6px 13px; cursor: pointer; }
+    #pmAddRow:hover { background: #4338ca; }
+    #pmTable { flex: 1 1 auto; overflow: auto; border: 1px solid #e4e4e7; border-radius: 8px; }
+    .pm-thead, .pm-trow { display: flex; align-items: center; padding: 8px 10px; }
+    .pm-thead { font-size: 11px; color: #a1a1aa; background: #fafafa; border-bottom: 1px solid #f0f0f0; position: sticky; top: 0; }
+    .pm-trow { font-size: 12px; color: #27272a; border-bottom: 1px solid #f4f4f5; }
+    .pm-trow:last-child { border-bottom: 0; }
+    .pm-trow.dragging { opacity: .5; }
+    .pm-no { flex: 0 0 52px; color: #a1a1aa; display: flex; align-items: center; gap: 6px; }
+    .pm-name { flex: 0 0 110px; padding-right: 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .pm-trow .pm-name { font-weight: 500; }
+    .pm-text { flex: 1 1 auto; min-width: 0; color: #71717a; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-right: 8px; }
+    .pm-en { flex: 0 0 64px; display: flex; justify-content: center; }
+    .pm-op { flex: 0 0 92px; text-align: right; }
+    .pm-op a { cursor: pointer; user-select: none; }
+    .pp-edit { color: #4f46e5; }
+    .pp-del { color: #dc2626; }
+    .drag { color: #c0c0c5; cursor: grab; }
+    .pm-empty { font-size: 12px; color: #a1a1aa; padding: 14px 10px; }
+    .tg { display: inline-block; width: 34px; height: 18px; border-radius: 999px; background: #d4d4d8; position: relative; cursor: pointer; }
+    .tg .knob { position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: #fff; transition: left .15s; }
+    .tg.on { background: #4f46e5; }
+    .tg.on .knob { left: 18px; }
+    .pm-edit { display: flex; flex-direction: column; gap: 6px; width: 100%; }
+    .pm-edit input, .pm-edit textarea { width: 100%; box-sizing: border-box; border: 1px solid #d4d4d8; border-radius: 6px; padding: 6px 8px; font-size: 12px; font-family: inherit; outline: none; resize: vertical; }
+    .pm-edit input:focus, .pm-edit textarea:focus { border-color: #6366f1; }
+    .pm-edit-actions { display: flex; gap: 8px; }
+    .pm-edit-actions button { font-size: 12px; padding: 5px 14px; border-radius: 6px; border: 1px solid #d4d4d8; background: #fff; color: #3f3f46; cursor: pointer; }
+    .pm-edit-actions button:hover { border-color: #6366f1; }
+    .pm-edit-actions button.primary { background: #4f46e5; border-color: #4f46e5; color: #fff; }
+    .pm-edit-actions button.primary:hover { background: #4338ca; }
+    .pm-edit-err { font-size: 11px; color: #dc2626; min-height: 14px; }
+
+    /* ===== 二次确认弹层（删除提示词时）===== */
+    #confirmModal { position: fixed; inset: 0; z-index: 110; background: rgba(0,0,0,.45); display: flex; align-items: center; justify-content: center; }
+    #confirmModal.hidden { display: none; }
+    .cf-panel { width: 320px; max-width: 90%; background: #fff; border-radius: 12px; padding: 20px; box-shadow: 0 10px 40px rgba(0,0,0,.2); }
+    .cf-msg { font-size: 14px; color: #27272a; line-height: 1.6; margin-bottom: 18px; }
+    .cf-actions { display: flex; justify-content: flex-end; gap: 10px; }
+    .cf-actions button { font-size: 13px; padding: 7px 18px; border-radius: 8px; border: 1px solid #d4d4d8; background: #fff; color: #3f3f46; cursor: pointer; }
+    .cf-actions button:hover { border-color: #6366f1; }
+    .cf-actions button.danger { background: #dc2626; border-color: #dc2626; color: #fff; }
+    .cf-actions button.danger:hover { background: #b91c1c; }
+
+    /* ===== 顶部自定义标题栏（右上角原生窗口按钮 + 左侧“教程”）===== */
+    #titlebar { flex: 0 0 auto; height: 36px; display: flex; align-items: center; gap: 10px; padding: 0 145px 0 14px; background: #f4f4f5; border-bottom: 1px solid #e4e4e7; -webkit-app-region: drag; }
+    .tb-brand { flex: 1 1 auto; display: flex; align-items: center; gap: 7px; }
+    .tb-logo { display: block; flex: 0 0 auto; }
+    .tb-title { font-size: 12px; color: #52525b; }
+    #tutorialBtn { -webkit-app-region: no-drag; font-size: 12px; color: #4f46e5; background: #fff; border: 1px solid #c7d2fe; border-radius: 7px; padding: 4px 13px; cursor: pointer; }
+    #tutorialBtn:hover { background: #eef2ff; }
+
+    /* 自动讨论旁的信息图标 */
+    .info-ic { width: 15px; height: 15px; border-radius: 50%; border: 1px solid currentColor; color: inherit; font-size: 10px; font-style: normal; line-height: 1; display: inline-flex; align-items: center; justify-content: center; opacity: .85; }
+
+    /* ===== 教程弹层 ===== */
+    #tutorialModal { position: fixed; inset: 0; z-index: 105; background: rgba(0,0,0,.45); display: flex; align-items: center; justify-content: center; }
+    #tutorialModal.hidden { display: none; }
+    /* 教程弹层尺寸与提示词管理弹层一致（够大、能容下四大块内容） */
+    .tt-panel { width: 1100px; max-width: 92%; height: 80%; max-height: 88%; background: #fff; border-radius: 12px; display: flex; flex-direction: column; overflow: hidden; }
+    .tt-head { flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; background: #f4f4f5; border-bottom: 1px solid #e4e4e7; font-size: 14px; color: #27272a; }
+    .tt-head button { background: none; border: 0; font-size: 15px; color: #71717a; cursor: pointer; }
+    .tt-head button:hover { color: #27272a; }
+    .tt-body { flex: 1 1 auto; overflow: auto; padding: 8px 28px 24px; }
+    .tt-h { font-size: 16px; color: #27272a; font-weight: 500; margin: 22px 0 8px; padding-bottom: 6px; border-bottom: 1px solid #eee; }
+    .tt-h:first-child { margin-top: 8px; }
+    .tt-body p { font-size: 13px; color: #3f3f46; line-height: 1.8; margin: 8px 0; }
+    .tt-body ul, .tt-body ol { margin: 8px 0; padding-left: 22px; }
+    .tt-body li { font-size: 13px; color: #3f3f46; line-height: 1.9; }
+    .tt-body b { color: #27272a; font-weight: 500; }
+    .tt-quote { font-size: 13px; color: #6d28d9; background: #faf5ff; border-left: 3px solid #c4b5fd; padding: 8px 12px; margin: 10px 0; line-height: 1.7; }
+    .tt-body a { color: #4f46e5; word-break: break-all; cursor: pointer; }
+  </style>
+</head>
+<body>
+  <div id="titlebar">
+    <span class="tb-brand">
+      <svg class="tb-logo" width="18" height="18" viewBox="0 0 512 512" aria-hidden="true">
+        <rect x="32" y="32" width="448" height="448" rx="108" fill="#4f46e5"/>
+        <path d="M150 300 L132 392 L236 318 Z" fill="#fff"/>
+        <rect x="112" y="150" width="288" height="176" rx="44" fill="#fff"/>
+        <circle cx="186" cy="238" r="22" fill="#4f46e5"/>
+        <circle cx="256" cy="238" r="22" fill="#4f46e5"/>
+        <circle cx="326" cy="238" r="22" fill="#ea580c"/>
+      </svg>
+      <span class="tb-title">AI讨论会</span>
+    </span>
+    <button id="tutorialBtn" type="button" title="使用教程">教程</button>
+  </div>
+
+  <div id="views"></div>
+
+  <!-- 收起态：右下角三个独立按钮 -->
+  <div id="composerCollapsed" class="hidden">
+    <span class="cbar-spacer"></span>
+    <button id="googleBtn2" type="button" class="google-btn" title="登录 Google（ChatGPT / Gemini 可共享此登录）">
+      <span class="g-logo" aria-hidden="true">
+        <svg width="15" height="15" viewBox="0 0 48 48">
+          <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/>
+          <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/>
+          <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/>
+          <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/>
+        </svg>
+      </span>
+      <span>Google</span>
+      <span class="g-status"><span class="g-dot"></span><span class="g-text">未登录</span></span>
+    </button>
+    <button id="manageBtn2" type="button" class="cbar-btn">⚙ 提示词管理</button>
+    <button id="expandBtn2" type="button" class="icon-btn" title="展开输入区">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#4f46e5" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 15l6-6 6 6"/></svg>
+    </button>
+  </div>
+
+  <!-- 展开态：完整输入区 -->
+  <div id="composer">
+    <div id="composerResize" title="上下拖动调整输入区高度"></div>
+    <div id="composerMain">
+
+      <div id="inputPanel" class="panel">
+        <div id="ai-row">
+          <button id="aiPicker" type="button" title="选择参与的 AI（可多选）">
+            <span class="lbl">AI</span>
+            <span id="ai-count"></span>
+            <span class="ai-caret">▾</span>
+          </button>
+          <div id="aiMenu" class="hidden"><div id="ai-toggles"></div></div>
+        </div>
+
+        <textarea id="msg" placeholder="输入要发给 AI 的内容…"></textarea>
+
+        <div id="inputActions">
+          <button id="googleBtn" type="button" class="google-btn" title="登录 Google（ChatGPT / Gemini 可共享此登录）">
+            <span class="g-logo" aria-hidden="true">
+              <svg width="15" height="15" viewBox="0 0 48 48">
+                <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/>
+                <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/>
+                <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/>
+                <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/>
+              </svg>
+            </span>
+            <span>Google</span>
+            <span class="g-status"><span class="g-dot"></span><span class="g-text">未登录</span></span>
+          </button>
+
+          <div id="rightActions">
+            <button id="discuss" title="自动将 AI 的输出发送给其他 AI">自动讨论<span class="info-ic" aria-hidden="true">i</span></button>
+            <div id="sendGroup">
+              <button id="send">发送</button>
+              <button id="sendOpts" type="button" tabindex="-1" title="发送方式" aria-label="发送方式">⌄</button>
+              <div id="sendMenu" class="hidden">
+                <button type="button" data-mode="enter"><span class="tick">✓</span>按 Enter 键发送消息</button>
+                <button type="button" data-mode="ctrl"><span class="tick">✓</span>按 Ctrl + Enter 键发送消息</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div id="promptPanel">
+        <svg id="ppBorder" preserveAspectRatio="none"><path id="ppBorderPath" fill="#fff" stroke="#d4d4d8" stroke-width="1.4"/></svg>
+        <button id="collapseBtn" type="button" class="notch-btn" title="收起输入区">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#71717a" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+        </button>
+        <div id="ppInner">
+          <div id="pp-head">
+            <span class="pp-h-title">提示词</span>
+            <button id="pmManage" type="button">⚙ 管理</button>
+          </div>
+          <div id="pp-list"></div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- 提示词管理弹层 -->
+  <div id="pmModal" class="hidden">
+    <div class="pm-panel">
+      <div class="pm-head"><span>提示词管理</span><button id="pmModalClose" type="button" aria-label="关闭">✕</button></div>
+      <div class="pm-body">
+        <div class="pm-tabs">
+          <button class="pm-tab" type="button" data-tab="header">“自动讨论”<br>抬头提示词</button>
+          <button class="pm-tab" type="button" data-tab="regular">常规提示词</button>
+        </div>
+        <div class="pm-content">
+          <div class="pm-content-head">
+            <div class="pm-ch-left">
+              <span id="pmContentTitle">「继续讨论」抬头提示词</span>
+              <span id="pmContentHint"></span>
+            </div>
+            <button id="pmAddRow" type="button">+ 新增</button>
+          </div>
+          <div id="pmTable"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 教程弹层 -->
+  <div id="tutorialModal" class="hidden">
+    <div class="tt-panel">
+      <div class="tt-head"><span>使用教程</span><button id="tutorialClose" type="button" aria-label="关闭">✕</button></div>
+      <div class="tt-body">
+        <div class="tt-h">产品简介</div>
+        <p>一个<b>不存任何数据</b>的「AI 讨论主持台」：在一个桌面窗口里并排嵌入多个 AI 网页（DeepSeek、豆包、千问、ChatGPT、Gemini…），让你<b>一句话同时发给多个 AI</b>，再<b>自动把各家的回答转发给其他 AI</b>，促成它们围绕同一个问题互相讨论、互相碰撞。你当主持人，随时插话、重定向。</p>
+        <div class="tt-quote">它是「指挥棒，不是记事本」——产品本身不保存对话，讨论记录天然留在你各个 AI 网站的账号里。</div>
+
+        <div class="tt-h">核心特点</div>
+        <ul>
+          <li><b>一句话群发</b>：同时把问题发给多个已登录的 AI 网页。</li>
+          <li><b>自动讨论</b>：等各 AI 答完，一键把每家的观点转发给其他 AI，并自动附上几条讨论规则，让它们真正"对话"而非各说各话。</li>
+          <li><b>主持人在场</b>：随时插话、继续追问。</li>
+          <li><b>多栏布局</b>：每个 AI 一栏，可刷新 / 最大化 / 关闭。</li>
+          <li><b>共享 Google 登录</b>：登一次 Google，ChatGPT / Gemini 可复用。</li>
+          <li><b>提示词管理</b>：维护可复用的提示词与"自动讨论"抬头规则。</li>
+          <li><b>零成本、零密钥、纯本地</b>：不调用付费 API，直接操作你已登录的 AI 网页；不连服务器、不存数据。</li>
+        </ul>
+
+        <div class="tt-h">使用指南</div>
+        <ol>
+          <li><b>选 AI</b>：在底部输入区选 1~3 个 AI，登录 AI 本身的账号，本产品不存储任何信息。</li>
+          <li><b>群发提问</b>：在输入框输入问题，点「发送」，同时发给所有 AI。发送方式（Enter / Ctrl+Enter）可点击发送旁的小箭头切换。</li>
+          <li><b>自动讨论</b>：等各 AI 答完后点「自动讨论」，自动把各 AI 的回答加上「自动讨论提示词」转发给其他 AI，让它们互相碰撞、深入讨论。</li>
+          <li><b>Google 登录</b>：点「Google」按钮登录后，ChatGPT / Gemini 可共享这个登录。</li>
+          <li><b>AI 管理</b>：每个 AI 栏顶部可刷新、最大化、关闭。</li>
+          <li><b>提示词管理</b>：右侧面板列出常用提示词，点一下即填进输入框；点「⚙ 管理」可增删改提示词；「自动讨论」提示词只能启用 1 条，会自动加在每次转发的最前面；常规提示词可启用多条。</li>
+          <li><b>收起 / 调高</b>：提示词面板右上角的按钮可收起整块输入区；上下拖动输入区顶部小横条调整高度。</li>
+        </ol>
+
+        <div class="tt-h">致谢</div>
+        <p>产品灵感来自日常使用多个 AI 共同讨论命题，希望能一个屏幕看到各 AI，统一发送、转发。后来了解到已有相关开源项目，遂在他人开源项目的基础上开发此产品，感谢先行者的开源精神。参考了以下两个开源项目，感兴趣的可移步：</p>
+        <p><a class="ext-link" href="https://github.com/lencx/Noi">https://github.com/lencx/Noi</a> —— 参考了"一屏管理多个 AI、统一发送"的设计。</p>
+        <p><a class="ext-link" href="https://github.com/axtonliu/ai-roundtable">https://github.com/axtonliu/ai-roundtable</a> —— 参考了"获取多个 AI 输出、加提示词转发给其他 AI"的设计。</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- 二次确认弹层（删除提示词时） -->
+  <div id="confirmModal" class="hidden">
+    <div class="cf-panel">
+      <div class="cf-msg" id="confirmMsg">是否删除？</div>
+      <div class="cf-actions">
+        <button id="confirmCancel" type="button">取消</button>
+        <button id="confirmOk" type="button" class="danger">确定</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="renderer.js"></script>
+</body>
+</html>

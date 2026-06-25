@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <!--
+    google-toolbar.html —— Google 登录窗口顶部的简易地址栏。
+    它只是这个窗口上方那条 44px 高的工具条（后退/刷新/网址框/前往/复制），
+    真正的 Google 网页内容在它下方、由 main.js 用 WebContentsView 加载。
+    本页通过 IPC 与主进程通信：接收当前网址(url)、发出 前往/后退/刷新 指令。
+  -->
+  <style>
+    html, body { margin: 0; height: 100%; font-family: system-ui, "Microsoft YaHei", sans-serif; }
+    #bar { display: flex; align-items: center; gap: 8px; height: 44px; padding: 0 10px; box-sizing: border-box; background: #f4f4f5; border-bottom: 1px solid #e4e4e7; }
+    #addr { flex: 1; height: 28px; border: 1px solid #d4d4d8; border-radius: 14px; padding: 0 14px; font-size: 13px; outline: none; }
+    #addr:focus { border-color: #6366f1; }
+    button { height: 28px; padding: 0 12px; border: 1px solid #d4d4d8; border-radius: 8px; background: #fff; font-size: 13px; cursor: pointer; color: #3f3f46; }
+    button:hover { border-color: #6366f1; }
+  </style>
+</head>
+<body>
+  <div id="bar">
+    <button id="back" title="后退">←</button>
+    <button id="reload" title="刷新">⟳</button>
+    <input id="addr" type="text" placeholder="网址（可编辑后回车前往）" spellcheck="false" />
+    <button id="go">前往</button>
+    <button id="copy">复制</button>
+  </div>
+  <script>
+    const { ipcRenderer, clipboard } = require('electron');
+    const addr = document.getElementById('addr');
+    // 主进程把当前网页地址推过来；用户正在编辑时不覆盖
+    ipcRenderer.on('url', (e, u) => { if (document.activeElement !== addr) addr.value = u; });
+    const nav = () => ipcRenderer.send('google-nav', addr.value);
+    document.getElementById('go').onclick = nav;
+    addr.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); nav(); } });
+    document.getElementById('back').onclick = () => ipcRenderer.send('google-back');
+    document.getElementById('reload').onclick = () => ipcRenderer.send('google-reload');
+    document.getElementById('copy').onclick = () => {
+      clipboard.writeText(addr.value);
+      const b = document.getElementById('copy'); b.textContent = '已复制'; setTimeout(() => b.textContent = '复制', 1000);
+    };
+  </script>
+</body>
+</html>

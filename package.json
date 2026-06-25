@@ -1,0 +1,38 @@
+{
+  "name": "ai-discussion-spike1",
+  "productName": "AI讨论会",
+  "version": "1.0.0",
+  "private": true,
+  "description": "AI讨论会：内嵌多个 AI 网页、一句话群发并自动转发讨论的桌面主持台",
+  "main": "src/main.js",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win"
+  },
+  "build": {
+    "appId": "com.aidiscussion.app",
+    "productName": "AI讨论会",
+    "asar": false,
+    "directories": { "output": "dist" },
+    "files": ["src/**/*", "assets/**/*", "config/sites.json", "package.json"],
+    "win": {
+      "icon": "assets/icon.ico",
+      "target": ["nsis"]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "shortcutName": "AI讨论会",
+      "artifactName": "AIDiscussion-Setup-${version}.${ext}"
+    },
+    "portable": {
+      "artifactName": "AIDiscussion-Portable-${version}.${ext}"
+    }
+  },
+  "devDependencies": {
+    "electron": "^37.10.3",
+    "electron-builder": "^26.15.3"
+  }
+}

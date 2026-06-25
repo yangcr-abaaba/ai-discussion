@@ -1,0 +1,101 @@
+{
+  "_comment": "外部配置：URL、分区、选择器都写在这里，代码不准硬编码。后续“手动修复适配”改这个文件即可。",
+  "_comment_selectors": "input=输入框；sendButton=发送按钮（留空则用回车发送，更稳）；latestResponse=最新回答容器（第3步才用）。input 留空时代码兜底取页面里第一个 textarea。",
+  "_comment_userAgent": "把浏览器身份伪装成普通 Chrome，避免 AI 站点检测到 Electron 内嵌环境而弹“使用环境异常”。全局默认值，单个站点可在自己条目里加 userAgent 覆盖。",
+  "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36",
+  "_comment_discussionPrompt": "“继续讨论”时自动加在各 AI 提问前面的 5 条规则提示词。来自产品需求说明.md，写在配置里便于调整。",
+  "discussionPrompt": "请对照当前议题，与其他 AI 成员开展深度讨论。你只需严格遵守以下 5 条规则，除此以外，自由发挥。\n1. 区分事实与猜测：对每个重要结论标明【事实】【推测】或【无证据】；【事实】给依据，【推测】说明推理，【无证据】直接承认。\n2. 优先讨论最重要的问题：集中回答最可能影响最终结论的关键问题，次要问题简要带过。\n3. 优先提供新增信息：补充新事实、新证据、新逻辑、新风险、新机会或新假设，避免重复他人。\n4. 寻找其他可能的解释：主动提出至少一种与你当前结论不同的解释，并说明它为何可能成立、何时更合理。\n5. 说明什么情况会改变结论：明确指出什么具体的新证据或情景会让你改变或推翻当前结论，要求具体、可验证。\n重要提醒：优先保证真实性，没有可靠信息就承认不知道，不要为满足规则而编造内容。",
+  "_comment_maxForwardChars": "“继续讨论”转发时，每条他人回答超过此字数就截断，避免一次塞超长内容触发风控/人机验证。",
+  "maxForwardChars": 1500,
+  "_comment_maxAI": "同时参与讨论的 AI 上限（产品决策：最多 3 个）。界面里选满 3 个后，其余按钮置灰，想换先关掉一个。",
+  "maxAI": 3,
+  "_comment_google": "Google 登录入口（不是讨论成员）。点界面右侧「Google 账号」按钮会在应用内打开这个页面，由用户自行登录/注销。它和 chatgpt、gemini 共用同一个登录分区(persist:google)，这样登一次 Google 后，登 ChatGPT/Gemini 时就能直接选这个 Google 账号、免反复登录。",
+  "google": {
+    "_note_url": "用 myaccount.google.com（真实产品页）而非裸 accounts.google.com：登出时它走的登录流 continue 指向真实 Google 产品，不触发 Google 的“安全浏览器核验”；裸 accounts(flowEntry=ServiceLogin) 那条流会被设卡拦“此浏览器可能不安全”。已登录时直接显示账号管理(可注销)。",
+    "url": "https://myaccount.google.com/",
+    "partition": "persist:google"
+  },
+  "_comment_stripSelectors": "读回答时从正文里剔除的元素（引用角标/参考资料/视频卡/推荐卡等），只保留纯文本，等同复制按钮效果。全局生效，单个站点可加自己的 stripSelectors 追加。改这里即可微调，不用动代码。",
+  "stripSelectors": [
+    "sup",
+    "[class*='citation']", "[class*='cite-']", "[class*='reference']", "[class*='footnote']",
+    "[class*='recommend']", "[class*='relate']", "[class*='search-card']", "[class*='card-list']",
+    "[class*='video']", "[class*='audio']", "[class*='media-card']"
+  ],
+  "sites": [
+    {
+      "id": "deepseek",
+      "name": "DeepSeek",
+      "url": "https://chat.deepseek.com/",
+      "partition": "persist:deepseek",
+      "enabled": true,
+      "_note_strip": "ds-markdown-cite 是 DeepSeek 智能搜索的引用角标（内含一个隐形‘-’占位符+数字），整块删除即可。",
+      "stripSelectors": [".ds-markdown-cite"],
+      "selectors": {
+        "input": "textarea#chat-input",
+        "sendButton": "",
+        "latestResponse": ".ds-markdown"
+      }
+    },
+    {
+      "id": "doubao",
+      "name": "豆包",
+      "url": "https://www.doubao.com/chat/",
+      "partition": "persist:doubao",
+      "enabled": true,
+      "trustedInput": true,
+      "_note_strip": "container-DEV3jt 是豆包的内联引用来源角标（如“杭州市人民政府”），带哈希类名，豆包改版可能变；变了就在这里更新。",
+      "stripSelectors": [".container-DEV3jt"],
+      "selectors": {
+        "input": "textarea.semi-input-textarea",
+        "sendButton": "",
+        "latestResponse": ".md-box-root"
+      }
+    },
+    {
+      "id": "qianwen",
+      "name": "千问",
+      "url": "https://www.qianwen.com/",
+      "partition": "persist:qianwen",
+      "enabled": true,
+      "_note": "千问输入框是 contenteditable 富文本编辑器，合成事件不认，代码会用 webview.insertText() 可信输入；回车不发，必须点发送按钮。",
+      "_note_zoom": "千问界面为宽屏设计，塞进窄栏会左右裁切。整体缩放给它更宽的逻辑宽度。数字越小内容越小、越能装下；裁切仍明显就调到 0.7 或 0.67。",
+      "zoomFactor": 0.8,
+      "selectors": {
+        "input": "[contenteditable=\"true\"]",
+        "sendButton": "button[aria-label=\"发送消息\"]",
+        "latestResponse": ".chat-answers-card-wrap"
+      }
+    },
+    {
+      "id": "chatgpt",
+      "name": "ChatGPT",
+      "url": "https://chatgpt.com/",
+      "partition": "persist:google",
+      "enabled": false,
+      "trustedInput": true,
+      "_note": "默认不开（最多3个）。与 google/gemini 共用 persist:google 分区，登录时可直接选 Google 账号。输入框是 contenteditable 富文本(ProseMirror)，走可信输入。",
+      "_note_selectors": "以下选择器按经验预填，未在真实页面实测；登录后实测若填字/发送/读取不灵，在这里改即可，不用动代码。ChatGPT 嵌入环境可能触发 Cloudflare 人机验证。",
+      "selectors": {
+        "input": "#prompt-textarea",
+        "sendButton": "button[data-testid=\"send-button\"]",
+        "latestResponse": "[data-message-author-role=\"assistant\"]"
+      }
+    },
+    {
+      "id": "gemini",
+      "name": "Gemini",
+      "url": "https://gemini.google.com/app",
+      "partition": "persist:google",
+      "enabled": false,
+      "trustedInput": true,
+      "_note": "默认不开（最多3个）。Gemini 本身就是 Google 站点，与 google 共用 persist:google 分区后，登一次 Google 即自动登录。输入框是富文本(.ql-editor)，走可信输入。",
+      "_note_send": "Gemini 发送按钮=有文字时出现的 button[aria-label=发送]（mat-icon-button）。用按钮发送而非回车：回车对时机敏感，并行发送时偶发失败；点按钮稳。",
+      "selectors": {
+        "input": ".ql-editor",
+        "sendButton": "button[aria-label=\"发送\"]",
+        "latestResponse": ".model-response-text"
+      }
+    }
+  ]
+}
