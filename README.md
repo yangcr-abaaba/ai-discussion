@@ -28,7 +28,7 @@
 
 ## 下载安装（普通用户）
 
-到本仓库的 **[Releases](../../releases)** 页面下载最新的 `AIDiscussion-Setup-x.x.x.exe`，双击安装即可。
+安装包：https://github.com/yangcr-abaaba/ai-discussion/releases/tag/v1.0.0
 
 > 因为没有购买代码签名证书，安装时 Windows SmartScreen 或安全软件可能提示"未知发布者"，点「仍要运行 / 允许」即可。
 
