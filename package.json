@@ -4,6 +4,7 @@
   "version": "1.0.0",
   "private": true,
   "description": "AI讨论会：内嵌多个 AI 网页、一句话群发并自动转发讨论的桌面主持台",
+  "author": "yangcr-abaaba",
   "main": "src/main.js",
   "scripts": {
     "start": "electron .",
