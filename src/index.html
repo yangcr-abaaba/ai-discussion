@@ -44,7 +44,8 @@
     .g-status .g-dot { width: 7px; height: 7px; border-radius: 50%; background: #a1a1aa; }
     .g-status .g-text { color: #a1a1aa; }
 
-    /* ===== 收起态：右下角三个独立按钮 ===== */
+    /* ===== 收起态：一行精简版输入条（AI选择 | 输入框含自动讨论/发送 | 提示词管理 | Google | 展开）===== */
+    /* 注：收起态与展开态从不同时显示，输入控件（#ai-row/#msg/#discuss/#sendGroup）由 JS 在两态间搬移共用 */
     #composerCollapsed { flex: 0 0 auto; display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: #f4f4f5; border-top: 1px solid #e4e4e7; }
     #composerCollapsed.hidden { display: none; }
     .cbar-spacer { flex: 1; }
@@ -52,6 +53,22 @@
     .cbar-btn:hover { border-color: #6366f1; }
     .icon-btn { width: 40px; height: 30px; padding: 0; background: #fff; border: 1px solid #c7d2fe; border-radius: 8px; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; }
     .icon-btn:hover { background: #eef2ff; }
+    /* AI 选择槽位（左下角）：运行时把 #ai-row 移进来 */
+    #cAiSlot { flex: 0 0 auto; }
+    /* 输入框：横向一行，内含自动讨论 + 发送按钮 */
+    #cInputBox { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: 8px; background: #fff; border: 1px solid #d4d4d8; border-radius: 10px; padding: 4px 6px 4px 13px; box-sizing: border-box; }
+    #cInputBox:focus-within { border-color: #6366f1; }
+    #composerCollapsed #msg { flex: 1 1 auto; height: 30px; padding: 4px 0; line-height: 1.5; }
+    #cInputBtns { flex: 0 0 auto; display: flex; align-items: center; gap: 6px; }
+    /* 提示词管理：悬停弹出提示词面板 */
+    #cPromptWrap { position: relative; flex: 0 0 auto; }
+    #cPromptPop { position: absolute; right: 0; bottom: calc(100% + 8px); z-index: 40; width: 320px; max-width: 80vw; max-height: 320px; overflow: auto; background: #fff; border: 1px solid #e4e4e7; border-radius: 10px; padding: 11px 13px; box-sizing: border-box; box-shadow: 0 6px 24px rgba(0,0,0,.14); display: none; }
+    #cPromptPop.show { display: block; } /* 点击“提示词”按钮切换显示/隐藏 */
+    #cPromptHead { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 9px; }
+    #cPromptHead .pp-h-title { font-size: 13px; color: #27272a; font-weight: 500; }
+    #cPromptHead #manageBtn2 { font-size: 12px; color: #4f46e5; background: #fff; border: 1px solid #c7d2fe; border-radius: 7px; padding: 3px 10px; cursor: pointer; }
+    #cPromptHead #manageBtn2:hover { background: #eef2ff; }
+    #pp-list-c { display: flex; flex-direction: column; gap: 8px; }
 
     /* ===== 展开态：输入面板（左）+ 提示词面板（右）===== */
     #composer { flex: 0 0 auto; display: flex; flex-direction: column; background: #f4f4f5; border-top: 1px solid #e4e4e7; }
@@ -235,9 +252,29 @@
 
   <div id="views"></div>
 
-  <!-- 收起态：右下角三个独立按钮 -->
+  <!-- 收起态：一行精简版输入条。AI选择/输入框/自动讨论/发送 等控件由 renderer.js 在收起时从展开态搬入空槽位 -->
   <div id="composerCollapsed" class="hidden">
-    <span class="cbar-spacer"></span>
+    <!-- 1) AI 选择（运行时把展开态的 #ai-row 移到这里） -->
+    <div id="cAiSlot"></div>
+
+    <!-- 2) 输入框：内含“自动讨论 + 发送”（运行时把 #msg / #discuss / #sendGroup 移进来） -->
+    <div id="cInputBox">
+      <div id="cInputBtns"></div>
+    </div>
+
+    <!-- 3) 提示词管理：鼠标悬停弹出提示词面板（提示词栏 + 管理按钮） -->
+    <div id="cPromptWrap">
+      <button id="cPromptBtn" type="button" class="cbar-btn">提示词</button>
+      <div id="cPromptPop">
+        <div id="cPromptHead">
+          <span class="pp-h-title">提示词</span>
+          <button id="manageBtn2" type="button">⚙ 管理</button>
+        </div>
+        <div id="pp-list-c"></div>
+      </div>
+    </div>
+
+    <!-- 4) Google 账号 -->
     <button id="googleBtn2" type="button" class="google-btn" title="登录 Google（ChatGPT / Gemini 可共享此登录）">
       <span class="g-logo" aria-hidden="true">
         <svg width="15" height="15" viewBox="0 0 48 48">
@@ -250,7 +287,8 @@
       <span>Google</span>
       <span class="g-status"><span class="g-dot"></span><span class="g-text">未登录</span></span>
     </button>
-    <button id="manageBtn2" type="button" class="cbar-btn">⚙ 提示词管理</button>
+
+    <!-- 5) 展开按钮 -->
     <button id="expandBtn2" type="button" class="icon-btn" title="展开输入区">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#4f46e5" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 15l6-6 6 6"/></svg>
     </button>

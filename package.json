@@ -1,5 +1,5 @@
 {
-  "name": "ai-discussion-spike1",
+  "name": "ai-discussion",
   "productName": "AI讨论会",
   "version": "1.0.0",
   "private": true,
@@ -8,13 +8,14 @@
   "main": "src/main.js",
   "scripts": {
     "start": "electron .",
-    "dist": "electron-builder --win"
+    "dist": "electron-builder --win && node build/clean-output.js"
   },
   "build": {
     "appId": "com.aidiscussion.app",
     "productName": "AI讨论会",
     "asar": false,
-    "directories": { "output": "dist" },
+    "afterPack": "build/afterPack.js",
+    "directories": { "output": "../AI讨论会_V1.0" },
     "files": ["src/**/*", "assets/**/*", "config/sites.json", "package.json"],
     "win": {
       "icon": "assets/icon.ico",
@@ -26,7 +27,8 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "shortcutName": "AI讨论会",
-      "artifactName": "AIDiscussion-Setup-${version}.${ext}"
+      "artifactName": "AIDiscussion-Setup-${version}.${ext}",
+      "differentialPackage": false
     },
     "portable": {
       "artifactName": "AIDiscussion-Portable-${version}.${ext}"

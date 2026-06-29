@@ -51,7 +51,11 @@ function patchGoogleHeaders(partition) {
 // 显示用产品名已改中文（package.json 的 productName=AI讨论会）。但 Electron 默认会把
 // 数据目录也按新名字换成 %APPDATA%/AI讨论会，导致已保存的各 AI / Google 登录态全部丢失。
 // 这里把数据目录固定回原英文目录，保住登录态。必须在 app ready 之前调用。
-app.setPath('userData', path.join(app.getPath('appData'), 'ai-discussion-spike1'));
+app.setPath('userData', path.join(app.getPath('appData'), 'ai-discussion'));
+
+// 把「用户数据目录」路径同步给渲染进程。开启 asar 打包后，程序自身目录变为只读，
+// 可写的配置（界面偏好 ui-state.json、提示词 prompts.json）必须改存到这个可写目录。
+ipcMain.on('get-user-data-path', (e) => { e.returnValue = app.getPath('userData'); });
 
 // 去掉 Electron 自带的英文默认菜单栏（File/Edit/View/Window/Help），界面更干净。
 Menu.setApplicationMenu(null);
@@ -177,6 +181,11 @@ function createWindow() {
     width: 1200,
     height: 860,
     icon: ICON_PATH,
+    // 启动防闪屏：先不显示窗口（show:false），等页面首帧渲染好（ready-to-show）再一次性显示；
+    // 同时把窗口底色设成与界面一致的白色，这样即便有极短的空窗期也只是白色、不会黑屏。
+    // 配合下方的 win.once('ready-to-show', ...)，可消除“先黑屏几秒、再白屏几秒”的启动闪烁。
+    show: false,
+    backgroundColor: '#ffffff',
     // 自定义标题栏：隐藏原生标题栏，但保留右上角原生的最小化/最大化/关闭按钮（覆盖层）。
     // 这样可以在标题栏里自己加“教程”按钮，放在这三个按钮左边。高度与 index.html 的 #titlebar 一致。
     titleBarStyle: 'hidden',
@@ -205,6 +214,13 @@ function createWindow() {
   });
 
   win.loadFile(path.join(__dirname, 'index.html'));
+
+  // 页面首帧渲染完成后再显示窗口，避免启动时露出黑屏/白屏空窗。
+  // 兜底：万一某些环境下 ready-to-show 迟迟不触发，最多等 3 秒也强制显示，绝不卡在隐藏状态。
+  let shown = false;
+  const reveal = () => { if (shown || win.isDestroyed()) return; shown = true; win.show(); };
+  win.once('ready-to-show', reveal);
+  setTimeout(reveal, 3000);
 }
 
 app.whenReady().then(() => {

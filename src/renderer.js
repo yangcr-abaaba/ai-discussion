@@ -23,11 +23,16 @@ const fs = require('fs');
 const path = require('path');
 const { ipcRenderer, shell } = require('electron');
 
+// 只读站点配置：随程序一起打包（asar 内可正常读取）。
 const CONFIG_PATH = path.join(__dirname, '..', 'config', 'sites.json');
+
+// 可写配置必须放在「用户数据目录」——因为开启 asar 后程序自身目录是只读的，写不进去。
+// 这个目录由主进程同步返回（见 main.js 的 get-user-data-path）。
+const USER_DATA = ipcRenderer.sendSync('get-user-data-path');
 // 用户可编辑的提示词存这里（与 sites.json 分开，避免改动那份带注释的站点配置）。
-const PROMPTS_PATH = path.join(__dirname, '..', 'config', 'prompts.json');
+const PROMPTS_PATH = path.join(USER_DATA, 'prompts.json');
 // 界面偏好存这里：上次选了哪些 AI、发送方式、输入区高度。只存界面偏好，不存任何对话内容。
-const UI_STATE_PATH = path.join(__dirname, '..', 'config', 'ui-state.json');
+const UI_STATE_PATH = path.join(USER_DATA, 'ui-state.json');
 
 // 状态文字已按需求移除显示；保留一个游离元素接收状态写入，避免各处代码报错。
 const statusEl = document.getElementById('status') || document.createElement('span');
@@ -481,12 +486,39 @@ function saveUiState() { try { fs.writeFileSync(UI_STATE_PATH, JSON.stringify(ui
 function saveActiveAI() { uiState.activeAI = views.map(v => v.site.id); saveUiState(); }
 
 // ---- 底部输入区：整体收起 / 展开（收起按钮嵌在提示词面板右上角缺口里）---------
+// 收起态是“一行精简版输入条”，与展开态共用同一套输入控件：因为两态从不同时显示，
+// 直接把这些“活节点”(#ai-row / #msg / #discuss / #sendGroup)在两个骨架间搬移即可，
+// 既不重复任何逻辑，又天然保留输入内容 / AI 选择 / 发送方式等状态。
 const composerEl = document.getElementById('composer');
 const composerMainEl = document.getElementById('composerMain');
 const composerCollapsedEl = document.getElementById('composerCollapsed');
+// 展开态里这些控件的“老家”容器
+const inputPanelEl = document.getElementById('inputPanel');
+const inputActionsEl = document.getElementById('inputActions');
+const rightActionsEl = document.getElementById('rightActions');
+const aiRowEl = document.getElementById('ai-row');
+const sendGroupEl = document.getElementById('sendGroup');
+// 收起态里的空槽位
+const cAiSlot = document.getElementById('cAiSlot');
+const cInputBox = document.getElementById('cInputBox');
+const cInputBtns = document.getElementById('cInputBtns');
 function setCollapsed(v) {
+  if (v) {
+    // 收起：把控件搬进精简条。AI选择→左槽位；输入框→输入盒；自动讨论/发送→输入盒内右侧。
+    cAiSlot.appendChild(aiRowEl);
+    cInputBox.insertBefore(msgEl, cInputBtns);
+    cInputBtns.appendChild(discussBtn);
+    cInputBtns.appendChild(sendGroupEl);
+  } else {
+    // 展开：搬回原位（顺序：#ai-row、#msg 在 #inputActions 之前；自动讨论、发送在 #rightActions 内）。
+    inputPanelEl.insertBefore(aiRowEl, inputActionsEl);
+    inputPanelEl.insertBefore(msgEl, inputActionsEl);
+    rightActionsEl.appendChild(discussBtn);
+    rightActionsEl.appendChild(sendGroupEl);
+  }
   composerEl.classList.toggle('hidden', v);
   composerCollapsedEl.classList.toggle('hidden', !v);
+  if (!v) ppRedraw(); // 回到展开态，提示词面板尺寸恢复，重画缺口边框
 }
 document.getElementById('collapseBtn').addEventListener('click', () => setCollapsed(true));
 document.getElementById('expandBtn2').addEventListener('click', () => setCollapsed(false));
@@ -581,6 +613,13 @@ const aiMenu = document.getElementById('aiMenu');
 aiPicker.addEventListener('click', (e) => { e.stopPropagation(); aiMenu.classList.toggle('hidden'); });
 aiMenu.addEventListener('click', (e) => e.stopPropagation()); // 菜单内选/取消不关闭，便于连续多选
 document.addEventListener('click', () => aiMenu.classList.add('hidden'));
+
+// 收起态“提示词”按钮：点击切换提示词面板显示/隐藏（点面板内不关、点页面别处关）。
+const cPromptBtn = document.getElementById('cPromptBtn');
+const cPromptPop = document.getElementById('cPromptPop');
+cPromptBtn.addEventListener('click', (e) => { e.stopPropagation(); cPromptPop.classList.toggle('show'); });
+cPromptPop.addEventListener('click', (e) => e.stopPropagation()); // 面板内点击（含“管理”按钮）不冒泡触发关闭
+document.addEventListener('click', () => cPromptPop.classList.remove('show'));
 
 function insertNewlineAtCursor() {
   const s = msgEl.selectionStart, e2 = msgEl.selectionEnd;
@@ -684,13 +723,16 @@ function initPromptStore() {
 }
 function enabledHeaderPrompt() { return promptStore.headerPrompts.find(p => p.enabled) || null; }
 
-// ---- 右侧提示词面板：只列“已启用”的提示词，点卡片=填进输入框（覆盖）----------
+// ---- 提示词面板：只列“已启用”的提示词，点卡片=填进输入框（覆盖）----------
+// 两处都用：展开态右侧面板 #pp-list，收起态“提示词管理”悬停弹层 #pp-list-c，内容一致。
 const ppList = document.getElementById('pp-list');
+const ppListC = document.getElementById('pp-list-c');
 
 function applyPromptToMsg(textVal) {
   if (textVal == null) return;
   msgEl.value = textVal; // 覆盖输入框内容（输入框固定高度，超出内部滚动）
   msgEl.focus();
+  cPromptPop.classList.remove('show'); // 收起态：选中提示词后收起面板
 }
 function buildPanelCard(title, text, isHeader) {
   const card = document.createElement('div');
@@ -702,18 +744,23 @@ function buildPanelCard(title, text, isHeader) {
   card.addEventListener('click', () => applyPromptToMsg(text || '')); // 抬头卡也可点击填入
   return card;
 }
-function renderPromptPanel() {
-  ppList.innerHTML = '';
+// 把“已启用”的提示词渲染进指定列表容器（同一份内容可渲染到多个列表，故每次新建卡片节点）。
+function renderPromptList(listEl) {
+  listEl.innerHTML = '';
   const eh = enabledHeaderPrompt();
-  if (eh) ppList.appendChild(buildPanelCard('当前抬头：' + (eh.name || '未命名'), eh.text, true));
+  if (eh) listEl.appendChild(buildPanelCard('当前抬头：' + (eh.name || '未命名'), eh.text, true));
   for (const p of promptStore.regularPrompts) {
-    if (p.enabled) ppList.appendChild(buildPanelCard(p.name || '未命名', p.text, false));
+    if (p.enabled) listEl.appendChild(buildPanelCard(p.name || '未命名', p.text, false));
   }
   if (!eh && !promptStore.regularPrompts.some(p => p.enabled)) {
     const empty = document.createElement('div'); empty.className = 'pp-empty';
-    empty.textContent = '暂无启用的提示词，点右上「管理」添加并启用。';
-    ppList.appendChild(empty);
+    empty.textContent = '暂无启用的提示词，点「管理」添加并启用。';
+    listEl.appendChild(empty);
   }
+}
+function renderPromptPanel() {
+  renderPromptList(ppList);             // 展开态右侧面板
+  if (ppListC) renderPromptList(ppListC); // 收起态悬停弹层
 }
 
 // ---- 提示词管理弹层：左侧两页签 + 右侧表格（增删改查 / 启用 / 拖动排序）--------
@@ -835,7 +882,9 @@ function openPmRowEditor(idx, isNew) {
   ti.focus();
 }
 function addPmRow() {
-  currentList().push({ name: '', text: '', enabled: false }); // 名称默认不填，进编辑态后必填才能保存
+  // 常规提示词新增即默认启用（填好就会出现在提示词面板）；抬头提示词默认不启用（最多只能启用 1 个，默认开会冲突）。
+  const enabled = pmActiveTab === 'regular';
+  currentList().push({ name: '', text: '', enabled }); // 名称默认不填，进编辑态后必填才能保存
   renderPmTable();
   openPmRowEditor(currentList().length - 1, true); // 直接进入编辑态（新建）
 }
