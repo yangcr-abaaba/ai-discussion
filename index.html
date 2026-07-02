@@ -1,0 +1,507 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>AI讨论会 · 让多个 AI 开一场讨论会</title>
+<meta name="description" content="一份不存任何数据的「AI 讨论主持台」：一个桌面窗口里并排嵌入 DeepSeek、豆包、千问、ChatGPT、Gemini，一句话群发，再自动把各家回答转发给彼此，促成它们围绕同一问题互相辩论。免费、开源、纯本地。" />
+<meta name="theme-color" content="#161009" />
+<meta property="og:type" content="website" />
+<meta property="og:locale" content="zh_CN" />
+<meta property="og:title" content="AI讨论会 · 让多个 AI 开一场讨论会" />
+<meta property="og:description" content="一句话群发多个 AI，再自动把各家回答转发给彼此，促成它们互相辩论。免费、开源、纯本地，不存任何数据。" />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect x='32' y='32' width='448' height='448' rx='108' fill='%234f46e5'/%3E%3Cpath d='M150 300 L132 392 L236 318 Z' fill='white'/%3E%3Crect x='112' y='150' width='288' height='176' rx='44' fill='white'/%3E%3Ccircle cx='186' cy='238' r='22' fill='%234f46e5'/%3E%3Ccircle cx='256' cy='238' r='22' fill='%234f46e5'/%3E%3Ccircle cx='326' cy='238' r='22' fill='%23ea580c'/%3E%3C/svg%3E" />
+<style>
+  :root{
+    /* 暖黑底 · 书院深夜 */
+    --bg:#161009; --bg-2:#1d1610; --bg-3:#241c13;
+    --paper:#f0e6d2; --paper-2:#d8caac; --paper-dim:#b6a583; --faint:#7a6c52;
+    /* 黄铜金主色 + 三种“声音色”（代表参与讨论的多个 AI） */
+    --brass:#e3a857; --brass-2:#f0c989; --brass-deep:#c4863a;
+    --teal:#6bb6a2; --coral:#e07a5a;
+    --line:rgba(240,230,210,.13); --line-2:rgba(240,230,210,.07);
+    --serif:"Source Han Serif SC","Noto Serif SC","Songti SC","STSong","SimSun",serif;
+    --kai:"Kaiti SC","STKaiti","KaiTi","楷体",serif;
+    --sans:"PingFang SC","Microsoft YaHei","Hiragino Sans GB","Helvetica Neue",sans-serif;
+    --mono:ui-monospace,"SFMono-Regular","JetBrains Mono","Cascadia Code","Source Code Pro",Consolas,monospace;
+    --wrap:1180px;
+  }
+  *{box-sizing:border-box;}
+  html{scroll-behavior:smooth;}
+  body{margin:0;background:var(--bg);color:var(--paper);font-family:var(--sans);line-height:1.8;
+    -webkit-font-smoothing:antialiased;overflow-x:hidden;
+    background-image:
+      radial-gradient(1100px 600px at 88% -6%, rgba(227,168,87,.10), transparent 60%),
+      radial-gradient(900px 520px at -8% 8%, rgba(107,182,162,.06), transparent 55%);
+    background-attachment:fixed;}
+  /* 胶片颗粒：极淡的全局质感 */
+  body::after{content:"";position:fixed;inset:0;z-index:9998;pointer-events:none;opacity:.04;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");}
+  a{color:inherit;text-decoration:none;}
+  ::selection{background:var(--brass);color:#1a1206;}
+  .wrap{max-width:var(--wrap);margin:0 auto;padding:0 28px;position:relative;z-index:1;}
+
+  .mono{font-family:var(--mono);}
+  .kicker{font-family:var(--mono);font-size:12.5px;letter-spacing:.32em;text-transform:uppercase;color:var(--brass);
+    display:inline-flex;align-items:center;gap:11px;}
+  .kicker::before{content:"";width:26px;height:1px;background:linear-gradient(90deg,var(--brass),transparent);}
+  .sect-title{font-family:var(--serif);font-weight:600;font-size:clamp(28px,4vw,42px);line-height:1.25;letter-spacing:.01em;margin:18px 0 0;}
+  .sect-lead{font-size:16px;color:var(--paper-dim);max-width:620px;margin:16px 0 0;}
+
+  /* ===== 顶栏 ===== */
+  header.nav{position:sticky;top:0;z-index:60;backdrop-filter:blur(14px) saturate(1.1);
+    background:linear-gradient(180deg,rgba(22,16,9,.86),rgba(22,16,9,.55));border-bottom:1px solid var(--line-2);}
+  .nav-in{display:flex;align-items:center;gap:18px;height:68px;}
+  .brand{display:flex;align-items:center;gap:12px;font-family:var(--serif);font-size:19px;font-weight:600;letter-spacing:.04em;}
+  .brand .seal{width:34px;height:34px;flex:0 0 auto;}
+  .nav-links{margin-left:auto;display:flex;align-items:center;gap:30px;font-family:var(--mono);font-size:13px;letter-spacing:.05em;}
+  .nav-links a{color:var(--paper-dim);position:relative;padding:4px 0;transition:color .25s;}
+  .nav-links a::after{content:"";position:absolute;left:0;bottom:-2px;width:0;height:1px;background:var(--brass);transition:width .3s;}
+  .nav-links a:hover{color:var(--paper);}
+  .nav-links a:hover::after{width:100%;}
+  .nav-dl{font-family:var(--mono);font-size:13px;letter-spacing:.04em;color:#1a1206;background:var(--brass);
+    padding:9px 18px;border-radius:2px;transition:.25s;box-shadow:0 0 0 0 rgba(227,168,87,.5);}
+  .nav-dl:hover{background:var(--brass-2);box-shadow:0 8px 30px -8px rgba(227,168,87,.7);}
+  @media(max-width:860px){.nav-links{display:none;}}
+
+  /* ===== Hero ===== */
+  .hero{position:relative;overflow:hidden;}
+  /* 圆桌同心环：暗夜里的一张圆桌 */
+  .hero::before{content:"";position:absolute;top:-120px;right:-220px;width:760px;height:760px;border-radius:50%;
+    background:
+      radial-gradient(circle, rgba(227,168,87,.10), transparent 42%),
+      repeating-radial-gradient(circle, transparent 0 46px, rgba(227,168,87,.055) 46px 47px);
+    mask:radial-gradient(circle,#000 60%,transparent 72%);pointer-events:none;}
+  .hero-in{position:relative;display:grid;grid-template-columns:1.04fr .96fr;gap:56px;align-items:center;padding:96px 0 104px;}
+  .h-head h1{font-family:var(--serif);font-weight:600;font-size:clamp(40px,6.2vw,72px);line-height:1.12;letter-spacing:.012em;margin:24px 0 0;}
+  .h-head h1 .accent{color:var(--brass);white-space:nowrap;}
+  .h-lead{font-size:18px;line-height:1.95;color:var(--paper-2);max-width:540px;margin:26px 0 0;}
+  .h-lead b{color:var(--paper);font-weight:600;}
+  .h-quote{font-family:var(--kai);font-size:18px;color:var(--brass-2);border-left:2px solid var(--brass);
+    padding:4px 0 4px 18px;margin:26px 0 0;max-width:520px;line-height:1.85;}
+  .h-cta{display:flex;flex-wrap:wrap;gap:16px;align-items:center;margin-top:34px;}
+  .btn-solid{font-family:var(--mono);font-size:14.5px;letter-spacing:.03em;color:#1a1206;background:var(--brass);
+    padding:15px 26px;border-radius:3px;display:inline-flex;align-items:center;gap:10px;transition:.25s;
+    box-shadow:0 14px 40px -16px rgba(227,168,87,.8);}
+  .btn-solid:hover{background:var(--brass-2);transform:translateY(-2px);}
+  .btn-line{font-family:var(--mono);font-size:14px;letter-spacing:.03em;color:var(--paper-dim);
+    padding:15px 22px;border:1px solid var(--line);border-radius:3px;transition:.25s;}
+  .btn-line:hover{border-color:var(--brass);color:var(--brass);}
+  .h-meta{display:flex;flex-wrap:wrap;gap:10px 26px;margin-top:30px;font-family:var(--mono);font-size:12.5px;
+    letter-spacing:.04em;color:var(--faint);}
+  .h-meta span{display:inline-flex;align-items:center;gap:8px;}
+  .h-meta i{width:5px;height:5px;border-radius:50%;background:var(--brass);font-style:normal;box-shadow:0 0 8px var(--brass);}
+
+  /* ===== 真实界面相框 ===== */
+  .shot{position:relative;border:1px solid var(--line);border-radius:14px;overflow:hidden;background:#fff;
+    box-shadow:0 50px 100px -45px rgba(0,0,0,.92),0 0 0 1px rgba(227,168,87,.12),inset 0 1px 0 rgba(255,255,255,.4);}
+  .shot::after{content:"";position:absolute;inset:0;pointer-events:none;border-radius:14px;box-shadow:inset 0 0 70px rgba(20,14,8,.16);}
+  .shot svg{display:block;width:100%;height:auto;}
+
+  /* 首屏编排：逐条入场 */
+  .anim-up{opacity:0;animation:up .9s cubic-bezier(.2,.7,.2,1) forwards;}
+  @keyframes up{to{opacity:1;transform:none;}}
+  .h-head .kicker{animation-delay:.05s;} .h-head h1{animation-delay:.18s;}
+  .h-head .h-lead{animation-delay:.34s;} .h-head .h-quote{animation-delay:.48s;}
+  .h-head .h-cta{animation-delay:.62s;} .h-head .h-meta{animation-delay:.74s;}
+  .h-head .anim-up{transform:translateY(22px);}
+  .shot.anim-up{animation-delay:.45s;animation-duration:1.1s;transform:translateY(30px) scale(.97);}
+
+  /* ===== 通用区块 ===== */
+  section{padding:104px 0;position:relative;}
+  section[id]{scroll-margin-top:70px;}
+  .rule{height:1px;background:linear-gradient(90deg,transparent,var(--line),transparent);}
+
+  /* ===== 核心功能：编辑部条目，无图标，靠大序号 + 宋体标题 ===== */
+  .feat-grid{display:grid;grid-template-columns:1fr 1fr;gap:0 56px;margin-top:54px;}
+  .feat{display:grid;grid-template-columns:auto 1fr;gap:22px;padding:30px 0;border-top:1px solid var(--line-2);align-items:start;}
+  .feat .no{font-family:var(--mono);font-size:30px;font-weight:500;line-height:1;color:var(--faint);transition:.3s;}
+  .feat h3{font-family:var(--serif);font-size:22px;font-weight:600;margin:0 0 8px;display:flex;align-items:center;gap:11px;}
+  .feat h3 .tick{width:7px;height:7px;border-radius:50%;flex:0 0 auto;}
+  .feat p{margin:0;font-size:14.5px;color:var(--paper-dim);line-height:1.8;}
+  .feat:hover .no{color:var(--brass);transform:translateY(-2px);}
+  .feat.v1 h3 .tick{background:var(--brass);box-shadow:0 0 10px var(--brass);}
+  .feat.v2 h3 .tick{background:var(--coral);box-shadow:0 0 10px var(--coral);}
+  .feat.v3 h3 .tick{background:var(--teal);box-shadow:0 0 10px var(--teal);}
+  .feat.v1:hover .no{color:var(--brass);} .feat.v2:hover .no{color:var(--coral);} .feat.v3:hover .no{color:var(--teal);}
+
+  /* ===== 三步：横向卡片 ===== */
+  .steps3{display:grid;grid-template-columns:repeat(3,1fr);gap:24px;margin-top:54px;}
+  .stp{position:relative;border:1px solid var(--line-2);border-top:2px solid var(--brass);border-radius:12px;
+    padding:30px 26px 28px;background:linear-gradient(180deg,rgba(36,28,19,.55),transparent);transition:.25s;}
+  .stp:hover{border-color:var(--line);transform:translateY(-4px);box-shadow:0 26px 54px -30px rgba(0,0,0,.85);}
+  .stp .no{font-family:var(--mono);font-size:30px;font-weight:600;color:var(--brass);line-height:1;}
+  .stp .tag{font-family:var(--mono);font-size:11px;letter-spacing:.16em;color:var(--faint);text-transform:uppercase;margin-top:14px;}
+  .stp h3{font-family:var(--serif);font-size:21px;font-weight:600;margin:6px 0 9px;}
+  .stp p{margin:0;font-size:14.5px;color:var(--paper-dim);line-height:1.8;}
+  @media(max-width:780px){.steps3{grid-template-columns:1fr;}}
+
+  /* ===== 底层原理：双栏 ===== */
+  .tech{display:grid;grid-template-columns:1.05fr .95fr;gap:60px;align-items:center;margin-top:18px;}
+  .tech ul{list-style:none;margin:34px 0 0;padding:0;}
+  .tech li{padding:20px 0;border-top:1px solid var(--line-2);}
+  .tech li .t{font-family:var(--serif);font-size:17px;color:var(--paper);margin-bottom:5px;}
+  .tech li p{margin:0;font-size:14px;color:var(--paper-dim);line-height:1.8;}
+  .diagram{aspect-ratio:1/.86;border:1px solid var(--line);border-radius:12px;background:
+      radial-gradient(circle at 50% 50%, rgba(227,168,87,.06), transparent 60%),linear-gradient(180deg,var(--bg-2),var(--bg-3));
+    display:flex;align-items:center;justify-content:center;overflow:hidden;}
+  .diagram svg{width:100%;height:100%;}
+  .ring-spin{transform-origin:230px 215px;animation:spin 60s linear infinite;}
+  @keyframes spin{to{transform:rotate(360deg);}}
+
+  /* ===== 下载 ===== */
+  .dl-wrap{margin-top:54px;border:1px solid var(--line);border-radius:14px;overflow:hidden;
+    background:linear-gradient(180deg,var(--bg-2),var(--bg-3));}
+  .dl-row{display:grid;grid-template-columns:repeat(3,1fr);}
+  .dl-cell{display:flex;align-items:center;gap:18px;padding:30px 32px;transition:.25s;position:relative;}
+  .dl-cell+.dl-cell{border-left:1px solid var(--line-2);}
+  .dl-cell:hover{background:rgba(227,168,87,.05);}
+  .dl-cell .mk{width:48px;height:48px;flex:0 0 auto;border-radius:10px;border:1px solid var(--line);
+    display:flex;align-items:center;justify-content:center;color:var(--brass);background:rgba(227,168,87,.07);}
+  .dl-cell .mk svg{width:24px;height:24px;}
+  .dl-cell h3{font-family:var(--serif);font-size:18px;margin:0 0 3px;display:flex;align-items:center;gap:9px;}
+  .dl-cell .arr{color:var(--brass);transition:.25s;font-family:var(--mono);}
+  .dl-cell:hover .arr{transform:translateX(5px);}
+  .dl-cell .sub{margin:0;font-family:var(--mono);font-size:12px;letter-spacing:.03em;color:var(--faint);}
+  .dl-note{display:flex;gap:13px;padding:20px 32px;border-top:1px solid var(--line-2);font-size:13px;
+    color:var(--paper-dim);line-height:1.75;background:rgba(224,122,90,.04);}
+  .dl-note .ic{flex:0 0 auto;color:var(--coral);margin-top:2px;}
+  .dl-note b{color:var(--brass-2);font-weight:600;}
+  @media(max-width:860px){.dl-row{grid-template-columns:1fr;}.dl-cell+.dl-cell{border-left:0;border-top:1px solid var(--line-2);}}
+
+  /* ===== 页脚 ===== */
+  footer{border-top:1px solid var(--line);padding:64px 0 48px;background:linear-gradient(180deg,transparent,rgba(0,0,0,.25));}
+  footer .ft-h{font-family:var(--serif);font-size:22px;margin:0 0 16px;color:var(--paper);}
+  footer .thanks{max-width:780px;font-size:14px;color:var(--paper-dim);line-height:1.95;}
+  footer .thanks a{color:var(--brass);border-bottom:1px solid rgba(227,168,87,.35);transition:.2s;}
+  footer .thanks a:hover{color:var(--brass-2);border-color:var(--brass-2);}
+  .ft-bottom{display:flex;flex-wrap:wrap;gap:10px;justify-content:space-between;margin-top:40px;padding-top:24px;
+    border-top:1px solid var(--line-2);font-family:var(--mono);font-size:12px;letter-spacing:.03em;color:var(--faint);}
+
+  /* ===== 滚动渐入 ===== */
+  .reveal{opacity:0;transform:translateY(24px);transition:opacity .8s ease,transform .8s cubic-bezier(.2,.7,.2,1);}
+  .reveal.in{opacity:1;transform:none;}
+
+  @media(max-width:900px){
+    .hero-in{grid-template-columns:1fr;gap:44px;padding:64px 0 72px;}
+    .feat-grid{grid-template-columns:1fr;gap:0;}
+    .tech{grid-template-columns:1fr;gap:36px;}
+  }
+</style>
+<noscript><style>.reveal{opacity:1!important;transform:none!important;}</style></noscript>
+</head>
+<body>
+
+<!-- ===== 顶栏 ===== -->
+<header class="nav">
+  <div class="wrap nav-in">
+    <a class="brand" href="#top">
+      <svg class="seal" viewBox="0 0 512 512" aria-hidden="true">
+        <rect x="32" y="32" width="448" height="448" rx="108" fill="#4f46e5"/>
+        <path d="M150 300 L132 392 L236 318 Z" fill="#fff"/>
+        <rect x="112" y="150" width="288" height="176" rx="44" fill="#fff"/>
+        <circle cx="186" cy="238" r="22" fill="#4f46e5"/>
+        <circle cx="256" cy="238" r="22" fill="#4f46e5"/>
+        <circle cx="326" cy="238" r="22" fill="#ea580c"/>
+      </svg>
+      AI讨论会
+    </a>
+    <nav class="nav-links">
+      <a href="#features">核心功能</a>
+      <a href="#how">如何使用</a>
+      <a href="#tech">底层原理</a>
+      <a href="#thanks">致谢</a>
+      <a href="https://github.com/yangcr-abaaba/ai-discussion" target="_blank" rel="noopener">GitHub</a>
+    </nav>
+    <a class="nav-dl" href="#download">免费下载</a>
+  </div>
+</header>
+
+<!-- ===== Hero ===== -->
+<div id="top" class="hero">
+  <div class="wrap hero-in">
+    <div class="h-head">
+      <span class="kicker anim-up">多 AI 圆桌 · 桌面主持台</span>
+      <h1 class="anim-up">让多个 AI<br>开一场<span class="accent">讨论会</span></h1>
+      <p class="h-lead anim-up">一个桌面窗口里并排请来 DeepSeek、豆包、千问、ChatGPT、Gemini……你<b>一句话同时发问</b>，它再<b>自动把各家回答转交给彼此</b>，让它们围绕同一个问题互相补充、彼此反驳。你，是这场会议的主持人。</p>
+      <p class="h-quote anim-up">「指挥棒，不是记事本」——不连服务器、不存一句对话，纪要天然留在你各家 AI 的账号里。</p>
+      <div class="h-cta anim-up">
+        <a class="btn-solid" href="#download">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m0 0l-4-4m4 4l4-4M5 21h14"/></svg>
+          下载 · Windows 版
+        </a>
+        <a class="btn-line" href="#how">看它如何主持 ↓</a>
+      </div>
+      <div class="h-meta anim-up">
+        <span><i></i>零成本 · 零密钥</span>
+        <span><i></i>不连服务器 · 不存对话</span>
+        <span><i></i>约 74MB · 开源 MIT</span>
+      </div>
+    </div>
+
+    <!-- 真实界面原型：三栏 AI + 收起态精简输入条 -->
+    <div class="shot anim-up" role="img" aria-label="AI讨论会界面预览：DeepSeek、豆包、千问三栏并排，底部一行精简输入条">
+      <svg viewBox="0 0 720 470" xmlns="http://www.w3.org/2000/svg">
+        <rect width="720" height="470" fill="#ffffff"/>
+        <!-- 标题栏 -->
+        <rect width="720" height="34" fill="#f4f4f5"/>
+        <rect x="14" y="11" width="13" height="13" rx="3" fill="#4f46e5"/>
+        <text x="34" y="22" font-family="sans-serif" font-size="11" fill="#52525b">AI讨论会</text>
+        <rect x="636" y="9" width="40" height="16" rx="5" fill="#fff" stroke="#c7d2fe"/>
+        <text x="645" y="21" font-family="sans-serif" font-size="9" fill="#4f46e5">教程</text>
+        <circle cx="694" cy="17" r="3" fill="#cfcfd6"/><circle cx="706" cy="17" r="3" fill="#cfcfd6"/>
+        <!-- 三栏 -->
+        <g font-family="sans-serif">
+          <!-- 列1 DeepSeek -->
+          <rect x="0" y="34" width="240" height="380" fill="#ffffff"/>
+          <rect x="0" y="34" width="240" height="26" fill="#fafafa"/>
+          <circle cx="14" cy="47" r="4" fill="#4f46e5"/>
+          <text x="24" y="51" font-size="10.5" fill="#52525b">DeepSeek</text>
+          <rect x="20" y="74" width="150" height="34" rx="9" fill="#eef2ff"/>
+          <rect x="30" y="83" width="120" height="6" rx="3" fill="#c7c9f0"/>
+          <rect x="30" y="94" width="78" height="6" rx="3" fill="#d7d8f4"/>
+          <rect x="42" y="120" width="178" height="58" rx="9" fill="#f6f6f8"/>
+          <rect x="54" y="132" width="150" height="6" rx="3" fill="#d9d9e0"/>
+          <rect x="54" y="145" width="156" height="6" rx="3" fill="#e2e2e8"/>
+          <rect x="54" y="158" width="96" height="6" rx="3" fill="#e2e2e8"/>
+          <!-- 列2 豆包 -->
+          <rect x="240" y="34" width="240" height="380" fill="#ffffff"/>
+          <line x1="240" y1="34" x2="240" y2="414" stroke="#ececec"/>
+          <rect x="240" y="34" width="240" height="26" fill="#fafafa"/>
+          <circle cx="254" cy="47" r="4" fill="#4f46e5"/>
+          <text x="264" y="51" font-size="10.5" fill="#52525b">豆包</text>
+          <rect x="260" y="74" width="150" height="34" rx="9" fill="#eef2ff"/>
+          <rect x="270" y="83" width="120" height="6" rx="3" fill="#c7c9f0"/>
+          <rect x="270" y="94" width="78" height="6" rx="3" fill="#d7d8f4"/>
+          <rect x="282" y="120" width="178" height="72" rx="9" fill="#f6f6f8"/>
+          <rect x="294" y="132" width="150" height="6" rx="3" fill="#d9d9e0"/>
+          <rect x="294" y="145" width="156" height="6" rx="3" fill="#e2e2e8"/>
+          <rect x="294" y="158" width="140" height="6" rx="3" fill="#e2e2e8"/>
+          <rect x="294" y="171" width="104" height="6" rx="3" fill="#e2e2e8"/>
+          <!-- 列3 千问 -->
+          <rect x="480" y="34" width="240" height="380" fill="#ffffff"/>
+          <line x1="480" y1="34" x2="480" y2="414" stroke="#ececec"/>
+          <rect x="480" y="34" width="240" height="26" fill="#fafafa"/>
+          <circle cx="494" cy="47" r="4" fill="#ea580c"/>
+          <text x="504" y="51" font-size="10.5" fill="#52525b">千问</text>
+          <rect x="500" y="74" width="150" height="34" rx="9" fill="#eef2ff"/>
+          <rect x="510" y="83" width="120" height="6" rx="3" fill="#c7c9f0"/>
+          <rect x="510" y="94" width="78" height="6" rx="3" fill="#d7d8f4"/>
+          <rect x="522" y="120" width="178" height="58" rx="9" fill="#fff7ed"/>
+          <rect x="534" y="132" width="150" height="6" rx="3" fill="#f7c9a3"/>
+          <rect x="534" y="145" width="150" height="6" rx="3" fill="#fad9bf"/>
+          <rect x="534" y="158" width="92" height="6" rx="3" fill="#fad9bf"/>
+        </g>
+        <!-- 底部输入条（收起态精简版） -->
+        <rect x="0" y="414" width="720" height="56" fill="#f4f4f5"/>
+        <line x1="0" y1="414" x2="720" y2="414" stroke="#e4e4e7"/>
+        <rect x="14" y="430" width="70" height="26" rx="13" fill="#fff" stroke="#d4d4d8"/>
+        <text x="30" y="447" font-size="10.5" fill="#3f3f46">AI 3/3</text>
+        <rect x="94" y="428" width="430" height="30" rx="9" fill="#fff" stroke="#d4d4d8"/>
+        <text x="108" y="447" font-size="10.5" fill="#a1a1aa">输入要发给所有 AI 的内容…</text>
+        <rect x="392" y="432" width="56" height="22" rx="7" fill="#fff" stroke="#ea580c"/>
+        <text x="400" y="447" font-size="9.5" fill="#ea580c">自动讨论</text>
+        <rect x="454" y="432" width="44" height="22" rx="7" fill="#4f46e5"/>
+        <text x="465" y="447" font-size="9.5" fill="#fff">发送</text>
+        <rect x="536" y="430" width="64" height="26" rx="8" fill="#fff" stroke="#d4d4d8"/>
+        <text x="550" y="447" font-size="10" fill="#3f3f46">提示词</text>
+        <rect x="610" y="430" width="74" height="26" rx="13" fill="#fff" stroke="#d4d4d8"/>
+        <circle cx="624" cy="443" r="4" fill="#16a34a"/>
+        <text x="632" y="447" font-size="10" fill="#3f3f46">Google</text>
+      </svg>
+    </div>
+  </div>
+</div>
+
+<div class="wrap"><div class="rule"></div></div>
+
+<!-- ===== 核心功能 ===== -->
+<section id="features">
+  <div class="wrap">
+    <h2 class="sect-title reveal">核心功能</h2>
+    <p class="sect-lead reveal">不再来回切标签页、复制粘贴。统一发问、自动转交、互相辩论——一个屏幕，统筹全场。</p>
+
+    <div class="feat-grid">
+      <div class="feat v1 reveal">
+        <div class="no">01</div>
+        <div>
+          <h3><span class="tick"></span>一句话群发</h3>
+          <p>在底部输入框敲一次字，同时送达所有已登录的 AI。从此告别「同一个问题复制粘贴五遍」。</p>
+        </div>
+      </div>
+      <div class="feat v2 reveal">
+        <div class="no">02</div>
+        <div>
+          <h3><span class="tick"></span>自动讨论</h3>
+          <p>各家答完，一键把每家观点附上讨论规则、转交给其他 AI，让它们真正「对话」，而非各说各话。</p>
+        </div>
+      </div>
+      <div class="feat v3 reveal">
+        <div class="no">03</div>
+        <div>
+          <h3><span class="tick"></span>多栏并排</h3>
+          <p>每个 AI 独占一栏，可单独刷新、最大化、随时关闭。最多同时三家，互不打扰、一览无余。</p>
+        </div>
+      </div>
+      <div class="feat v1 reveal">
+        <div class="no">04</div>
+        <div>
+          <h3><span class="tick"></span>提示词管理</h3>
+          <p>常用提示词与「自动讨论」抬头规则随手存取，一点即填；增删改随心，启用即刻生效。</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="wrap"><div class="rule"></div></div>
+
+<!-- ===== 如何使用 ===== -->
+<section id="how">
+  <div class="wrap">
+    <h2 class="sect-title reveal">如何使用</h2>
+    <p class="sect-lead reveal">不需要 API Key，不需要任何配置——装好，就用你早已登录的 AI 账号开场。</p>
+
+    <div class="steps3">
+      <div class="stp reveal">
+        <div class="no">01</div>
+        <div class="tag">入席</div>
+        <h3>选 AI · 登录</h3>
+        <p>在底部选 1~3 位「参会者」，用它们各自的账号登录。产品不保存你的任何账号信息。</p>
+      </div>
+      <div class="stp reveal">
+        <div class="no">02</div>
+        <div class="tag">发问</div>
+        <h3>一句话群发</h3>
+        <p>输入问题、点「发送」，同一句话同时抵达所有 AI。发送方式可在 Enter / Ctrl+Enter 间切换。</p>
+      </div>
+      <div class="stp reveal">
+        <div class="no">03</div>
+        <div class="tag">交锋</div>
+        <h3>点「自动讨论」</h3>
+        <p>各家答完，一键把所有观点加上讨论规则、转交彼此，看它们互相补充、反驳、层层深入。</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="wrap"><div class="rule"></div></div>
+
+<!-- ===== 底层原理 ===== -->
+<section id="tech">
+  <div class="wrap">
+    <h2 class="sect-title reveal">底层原理</h2>
+    <div class="tech">
+      <div class="reveal">
+        <p class="sect-lead" style="margin-top:16px">基于 Electron，用隔离分区的内嵌网页直接驱动各 AI 官网——你用的，就是它们真实、完整的网页能力。</p>
+        <ul>
+          <li>
+            <div class="t">直接操作真实网页</div>
+            <p>定位输入框 → 填字 → 触发发送 → 读取回答 → 转交。全程在你已登录的官网上完成，零额外费用、零 API 密钥。</p>
+          </li>
+          <li>
+            <div class="t">为什么不是 iframe</div>
+            <p>多数 AI 站点用 X-Frame-Options / 同源策略 / 第三方 Cookie 设防，纯 iframe 既嵌不进也操作不了；webview 才能以「第一方顶层页面」的身份绕过。</p>
+          </li>
+        </ul>
+      </div>
+      <div class="diagram reveal" role="img" aria-label="圆桌工作原理：中心主持台与三个 AI 节点互相转交">
+        <svg viewBox="0 0 460 400" xmlns="http://www.w3.org/2000/svg">
+          <g class="ring-spin" fill="none" stroke="#e3a857" stroke-opacity=".25">
+            <circle cx="230" cy="215" r="150" stroke-dasharray="4 9"/>
+            <circle cx="230" cy="215" r="110" stroke-opacity=".15"/>
+          </g>
+          <!-- 连线 -->
+          <g stroke="#e3a857" stroke-opacity=".4" stroke-width="1.4" stroke-dasharray="3 5">
+            <path d="M230 215 L230 95"/><path d="M230 215 L120 320"/><path d="M230 215 L340 320"/>
+          </g>
+          <!-- 中心主持台 -->
+          <circle cx="230" cy="215" r="48" fill="#241c13" stroke="#e3a857" stroke-width="1.5"/>
+          <text x="230" y="210" text-anchor="middle" font-family="'Songti SC',serif" font-size="18" fill="#f0e6d2">主持</text>
+          <text x="230" y="230" text-anchor="middle" font-family="monospace" font-size="9" fill="#7a6c52" letter-spacing="1">RELAY</text>
+          <!-- 三节点 -->
+          <g font-family="'Songti SC',serif" font-size="13" text-anchor="middle">
+            <circle cx="230" cy="78" r="30" fill="#241c13" stroke="#e3a857" stroke-width="1.5"/><text x="230" y="83" fill="#e3a857">DeepSeek</text>
+            <circle cx="108" cy="330" r="30" fill="#241c13" stroke="#6bb6a2" stroke-width="1.5"/><text x="108" y="335" fill="#6bb6a2">豆包</text>
+            <circle cx="352" cy="330" r="30" fill="#241c13" stroke="#e07a5a" stroke-width="1.5"/><text x="352" y="335" fill="#e07a5a">千问</text>
+          </g>
+        </svg>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="wrap"><div class="rule"></div></div>
+
+<!-- ===== 下载 ===== -->
+<section id="download">
+  <div class="wrap">
+    <h2 class="sect-title reveal">下载</h2>
+    <p class="sect-lead reveal">支持 Windows 10 / 11，安装包约 74MB。三条下载通道，任选其一。</p>
+
+    <div class="dl-wrap reveal">
+      <div class="dl-row">
+        <a class="dl-cell" href="https://pan.baidu.com/s/1sjoAym99VvzLoz7vVI-6hg?pwd=qu6x" target="_blank" rel="noopener">
+          <div class="mk">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 18a4 4 0 01-.5-7.97 5.5 5.5 0 0110.62-1.46A4.001 4.001 0 0117 18H7z"/><path d="M12 11v5m0 0l-2-2m2 2l2-2"/></svg>
+          </div>
+          <div>
+            <h3>百度网盘 <span class="arr">→</span></h3>
+            <p class="sub">国内推荐 · 提取码 qu6x</p>
+          </div>
+        </a>
+        <a class="dl-cell" href="https://pan.quark.cn/s/f4439acf3f5a" target="_blank" rel="noopener">
+          <div class="mk">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 18a4 4 0 01-.5-7.97 5.5 5.5 0 0110.62-1.46A4.001 4.001 0 0117 18H7z"/><path d="M12 11v5m0 0l-2-2m2 2l2-2"/></svg>
+          </div>
+          <div>
+            <h3>夸克网盘 <span class="arr">→</span></h3>
+            <p class="sub">国内推荐 · 提取码 9q79</p>
+          </div>
+        </a>
+        <a class="dl-cell" href="https://github.com/yangcr-abaaba/ai-discussion/releases/tag/v1.0.0" target="_blank" rel="noopener">
+          <div class="mk">
+            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 .5A11.5 11.5 0 00.5 12 11.5 11.5 0 008.4 23c.6.1.8-.3.8-.6v-2c-3.2.7-3.9-1.5-3.9-1.5-.5-1.4-1.3-1.7-1.3-1.7-1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1 1.8 2.8 1.3 3.5 1 .1-.8.4-1.3.7-1.6-2.6-.3-5.3-1.3-5.3-5.7 0-1.3.5-2.3 1.2-3.1-.1-.3-.5-1.5.1-3.2 0 0 1-.3 3.3 1.2a11.5 11.5 0 016 0C17.3 4.7 18.3 5 18.3 5c.6 1.7.2 2.9.1 3.2.8.8 1.2 1.8 1.2 3.1 0 4.4-2.7 5.4-5.3 5.7.4.4.8 1.1.8 2.2v3.2c0 .3.2.7.8.6A11.5 11.5 0 0023.5 12 11.5 11.5 0 0012 .5z"/></svg>
+          </div>
+          <div>
+            <h3>GitHub Release <span class="arr">→</span></h3>
+            <p class="sub">开源仓库 · 海外直连 · 可读源码</p>
+          </div>
+        </a>
+      </div>
+      <div class="dl-note">
+        <span class="ic"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4m0 4h.01M10.3 3.9L1.8 18a2 2 0 001.7 3h17a2 2 0 001.7-3L13.7 3.9a2 2 0 00-3.4 0z"/></svg></span>
+        <span><b>安装小提示：</b>未购买代码签名证书，安装时 Windows SmartScreen 或安全软件可能提示「未知发布者」，点「更多信息 → 仍要运行」即可。<b>首次打开</b>会因杀毒软件首次扫描而稍慢几秒，之后均为秒开。本工具只自动化操作你自己已登录的 AI 网站，请遵守各家服务条款、合理低频使用。</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===== 页脚 · 致谢 ===== -->
+<footer id="thanks">
+  <div class="wrap">
+    <h3 class="ft-h">致谢</h3>
+    <p class="thanks">本项目参考了 <a href="https://github.com/lencx/Noi" target="_blank" rel="noopener">Noi</a>（一屏管理多 AI、统一发送）与 <a href="https://github.com/axtonliu/ai-roundtable" target="_blank" rel="noopener">ai-roundtable</a>（获取多 AI 输出、互相转发讨论）。感谢先行者的开源精神，本项目也全部开源。</p>
+    <div class="ft-bottom">
+      <span>© 2026 AI讨论会 · 基于 MIT 协议开源</span>
+      <span>本工具不隶属于、也不代表任何 AI 服务商</span>
+    </div>
+  </div>
+</footer>
+
+<script>
+  // 滚动渐入：进入视口淡入；不支持 IntersectionObserver 的旧浏览器直接全部显示（兜底）。
+  (function(){
+    var els = document.querySelectorAll('.reveal');
+    if (!('IntersectionObserver' in window)) {
+      els.forEach(function(el){ el.classList.add('in'); });
+      return;
+    }
+    var io = new IntersectionObserver(function(entries){
+      entries.forEach(function(e){ if (e.isIntersecting){ e.target.classList.add('in'); io.unobserve(e.target); } });
+    }, { threshold: .14 });
+    els.forEach(function(el){ io.observe(el); });
+  })();
+</script>
+</body>
+</html>
