@@ -30,6 +30,8 @@
 
 安装包：https://github.com/yangcr-abaaba/ai-discussion/releases/tag/v1.0.0
 
+官网：https://yangcr-abaaba.github.io/ai-discussion/
+
 > 因为没有购买代码签名证书，安装时 Windows SmartScreen 或安全软件可能提示"未知发布者"，点「仍要运行 / 允许」即可。
 
 ## 本地运行（开发者）
