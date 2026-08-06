@@ -187,6 +187,7 @@ function buildToggles() {
 function maxAI() { return (appConfig && appConfig.maxAI) || 3; }
 
 let busy = false; // 发送 / 继续讨论进行中：期间禁用所有开关
+let discussionUnlocked = false; // 是否已有可讨论内容（历史已加载 / 正在输出 / 已产生过回答）；仅“刚进来产品、全空”时为 false
 
 // 刷新全部开关按钮：高亮已开启的；选满上限时把“未开启”的置灰（不能再开第 4 个）；进行中全部禁用。
 function refreshChips() {
@@ -432,10 +433,31 @@ async function readAnswer(site, webview) {
 
 function setBusy(b) {
   busy = b;
-  sendBtn.disabled = discussBtn.disabled = b;
+  sendBtn.disabled = b;
+  if (b) discussionUnlocked = true; // 输出进行中 → 解锁自动讨论（用户要求：正在输出也可点击）
+  updateDiscussEnabled();           // 重新计算自动讨论按钮可用性
   // 发送/讨论进行中，禁用顶部开关（refreshChips 会同时兼顾“选满置灰”逻辑）。
   refreshChips();
 }
+// 自动讨论按钮可用性：仅“刚进来产品、全空且无输出”时置灰；
+// 打开历史记录（webview 已有内容）或正在输出，一律不校验、可点击。
+function updateDiscussEnabled() {
+  discussBtn.disabled = !discussionUnlocked && !busy;
+}
+// 启动后做有限次数的探测：若某家 AI 的网页里已存在历史对话（重开后 AI 站点自带的历史），
+// 则解锁自动讨论。仅启动期一次性探测，不等“全部答完”，也不持续轮询。
+let historyProbeAttempt = 0;
+async function detectInitialHistory() {
+  if (!views.length || discussionUnlocked || historyProbeAttempt >= 6) return;
+  historyProbeAttempt++;
+  for (const { site, webview } of views) {
+    const t = (await readAnswer(site, webview)).trim();
+    if (t) { discussionUnlocked = true; updateDiscussEnabled(); return; }
+  }
+  setTimeout(detectInitialHistory, 1500); // 网页可能还没加载完，稍后再探一次
+}
+// 供“打开历史记录”等显式加载内容的行为调用：立即解锁自动讨论。
+function markDiscussionUnlocked() { discussionUnlocked = true; updateDiscussEnabled(); }
 
 // 继续讨论：等三家答完 → 读三家 → 给每家组合(别人观点 + 5条规则) → 逐个转发
 async function continueDiscussion() {
@@ -455,13 +477,11 @@ async function continueDiscussion() {
     // 2) 给每家组合“其他成员观点 + 5条规则”，逐个转发
     statusEl.textContent = '转发中…';
     // 并行转发：每家收到的是“别人的观点”（各不相同），各自只操作自己的 webview。
-    const cap = (appConfig && appConfig.maxForwardChars) || 1500;
-    const clip = t => (t.length > cap ? t.slice(0, cap) + '…（节选）' : t);
     const fwd = await Promise.all(views.map(async ({ site, webview }) => {
       const others = answers.filter(a => a.site.id !== site.id && a.text);
       if (!others.length) return { site, msg: '无其他观点可转发' };
-      // 转发瘦身：过长的回答截断，避免一次塞超长内容触发风控/人机验证。
-      const othersText = others.map(a => `【${a.site.name} 的观点】\n${clip(a.text)}`).join('\n\n');
+      // 转发各家完整观点，不做节选（原 per-source 截断会破坏讨论完整性；如需防风控可改在合并后整条消息处单点截断）
+      const othersText = others.map(a => `【${a.site.name} 的观点】\n${a.text}`).join('\n\n');
       const message = `${prompt}\n\n以下是其他成员的观点，请基于此继续讨论：\n\n${othersText}`;
       try {
         const r = await injectOne(site, webview, message);
@@ -472,7 +492,7 @@ async function continueDiscussion() {
     }));
     statusEl.textContent = fwd.map(f => `${f.site.name}：${f.msg}`).join('  |  ');
   } finally {
-    setBusy(false);
+    setBusy(false); // 转发后各家会开始新一轮输出；discussionUnlocked 已在输出期间置 true，按钮保持可点
   }
 }
 
@@ -519,6 +539,8 @@ function setCollapsed(v) {
   composerEl.classList.toggle('hidden', v);
   composerCollapsedEl.classList.toggle('hidden', !v);
   if (!v) ppRedraw(); // 回到展开态，提示词面板尺寸恢复，重画缺口边框
+  uiState.composerCollapsed = !!v;
+  saveUiState();
 }
 document.getElementById('collapseBtn').addEventListener('click', () => setCollapsed(true));
 document.getElementById('expandBtn2').addEventListener('click', () => setCollapsed(false));
@@ -607,12 +629,34 @@ document.addEventListener('click', () => sendMenu.classList.add('hidden')); // �
 applySendMode();
 
 // ---- AI 选择改为下拉（胶囊平铺在下拉里，支持多选；触发钮显示已选数）----------
-// 为以后“接入很多 AI”留扩展空间：下拉可滚动，不挤占顶部横向空间。
+// 为以后"接入很多 AI"留扩展空间：下拉可滚动，不挤占顶部横向空间。
+// 展开后点弹窗外任意处收起：含上方的 AI 网页（<webview>）。Electron 的 webview 会
+// “吞掉”鼠标事件、其内点击不冒泡到宿主 document（见 dragMask 那段），故加一个透明
+// 遮罩盖住 webview 区来接住这处点击；其余宿主元素仍由 document 监听兜底关闭。
 const aiPicker = document.getElementById('aiPicker');
 const aiMenu = document.getElementById('aiMenu');
-aiPicker.addEventListener('click', (e) => { e.stopPropagation(); aiMenu.classList.toggle('hidden'); });
+// 透明遮罩：覆盖 #views（webview 区）接住外部点击。挂在 body 而非 #views，
+// 以免被 buildViews 的 viewsEl.innerHTML='' 重建误删（见 loadAndRender）。
+const aiBackdrop = document.createElement('div');
+aiBackdrop.style.cssText = 'position:fixed;z-index:25;display:none;';
+document.body.appendChild(aiBackdrop);
+function showAiBackdrop() {
+  const r = viewsEl.getBoundingClientRect();
+  aiBackdrop.style.top = r.top + 'px';
+  aiBackdrop.style.left = r.left + 'px';
+  aiBackdrop.style.width = r.width + 'px';
+  aiBackdrop.style.height = r.height + 'px';
+  aiBackdrop.style.display = 'block';
+}
+function openAiMenu() { aiMenu.classList.remove('hidden'); showAiBackdrop(); }
+function closeAiMenu() { aiMenu.classList.add('hidden'); aiBackdrop.style.display = 'none'; }
+aiPicker.addEventListener('click', (e) => {
+  e.stopPropagation();
+  aiMenu.classList.contains('hidden') ? openAiMenu() : closeAiMenu();
+});
 aiMenu.addEventListener('click', (e) => e.stopPropagation()); // 菜单内选/取消不关闭，便于连续多选
-document.addEventListener('click', () => aiMenu.classList.add('hidden'));
+aiBackdrop.addEventListener('click', closeAiMenu);            // 点 webview 区（遮罩）关闭
+document.addEventListener('click', closeAiMenu);              // 兜底：点其它宿主元素（标题栏/输入区）也关
 
 // 收起态“提示词”按钮：点击切换提示词面板显示/隐藏（点面板内不关、点页面别处关）。
 const cPromptBtn = document.getElementById('cPromptBtn');
@@ -741,7 +785,7 @@ function buildPanelCard(title, text, isHeader) {
   const name = document.createElement('div'); name.className = 'pp-name'; name.textContent = title;
   const body = document.createElement('div'); body.className = 'pp-text'; body.textContent = text || '';
   card.append(name, body);
-  card.addEventListener('click', () => applyPromptToMsg(text || '')); // 抬头卡也可点击填入
+  card.addEventListener('click', () => showPromptConfirm(() => applyPromptToMsg(text || ''))); // 抬头卡也可点击填入，先确认是否覆盖
   return card;
 }
 // 把“已启用”的提示词渲染进指定列表容器（同一份内容可渲染到多个列表，故每次新建卡片节点）。
@@ -896,6 +940,38 @@ document.getElementById('pmAddRow').addEventListener('click', addPmRow);
 document.getElementById('pmManage').addEventListener('click', openPmModal);
 document.getElementById('manageBtn2').addEventListener('click', openPmModal);
 
+// ---- 提示词覆盖确认弹层（点击提示词卡片时询问是否覆盖输入框）---------------
+const promptConfirmModal = document.getElementById('promptConfirmModal');
+const promptConfirmCheck = document.getElementById('promptConfirmCheck');
+const promptConfirmOk = document.getElementById('promptConfirmOk');
+const promptConfirmCancel = document.getElementById('promptConfirmCancel');
+const SKIP_PROMPT_CONFIRM_KEY = 'ai_discussion_skip_prompt_confirm';
+let promptConfirmCb = null;
+function showPromptConfirm(onOk) {
+  if (localStorage.getItem(SKIP_PROMPT_CONFIRM_KEY) === 'true') { onOk(); return; }
+  promptConfirmCheck.checked = false; // 默认不勾选"不再提醒"
+  promptConfirmCb = onOk;
+  promptConfirmModal.classList.remove('hidden');
+}
+function hidePromptConfirm() { promptConfirmModal.classList.add('hidden'); promptConfirmCb = null; }
+promptConfirmOk.addEventListener('click', () => {
+  const cb = promptConfirmCb;
+  if (promptConfirmCheck.checked) localStorage.setItem(SKIP_PROMPT_CONFIRM_KEY, 'true');
+  hidePromptConfirm();
+  if (cb) cb();
+});
+promptConfirmCancel.addEventListener('click', () => {
+  // 取消：不填充，但勾选了"不再提醒"则记下偏好，后续不再弹
+  if (promptConfirmCheck.checked) localStorage.setItem(SKIP_PROMPT_CONFIRM_KEY, 'true');
+  hidePromptConfirm();
+});
+promptConfirmModal.addEventListener('click', (e) => {
+  if (e.target === promptConfirmModal) {
+    if (promptConfirmCheck.checked) localStorage.setItem(SKIP_PROMPT_CONFIRM_KEY, 'true'); // 点遮罩关闭同取消语义
+    hidePromptConfirm();
+  }
+});
+
 // ---- 二次确认弹层（删除提示词时用）-----------------------------------------
 const confirmModal = document.getElementById('confirmModal');
 const confirmMsgEl = document.getElementById('confirmMsg');
@@ -922,5 +998,8 @@ buildViews();
 initPromptStore();
 renderPromptPanel();
 refreshGoogleStatus();
+setCollapsed(uiState.composerCollapsed === true);                 // 还原上次收起/展开状态；默认展开
 applyComposerHeight(uiState.composerHeight || COMPOSER_DEFAULT_H); // 还原上次高度（没有则默认≈3栏）并画好缺口边框
 ppRedraw();
+updateDiscussEnabled();   // 初始：刚进来产品、全空，自动讨论按钮置灰不可点
+detectInitialHistory();   // 启动期探测：若 webview 里已有历史对话则解锁

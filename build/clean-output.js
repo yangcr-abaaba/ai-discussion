@@ -13,8 +13,8 @@
 const fs = require('fs');
 const path = require('path');
 
-// 成品目录：build/ 在项目根下，再上一级就是 D:\文档资料\AI讨论，成品在其下 AI讨论会_V1.0。
-const OUTPUT_DIR = path.join(__dirname, '..', '..', 'AI讨论会_V1.0');
+// 成品目录：build/ 在项目根下，再上一级就是 D:\文档资料\AI讨论，成品在其下 AI讨论会_V2.0。
+const OUTPUT_DIR = path.join(__dirname, '..', '..', 'AI讨论会_V2.0');
 
 if (!fs.existsSync(OUTPUT_DIR)) {
   console.log('[clean-output] 未找到成品目录，跳过：' + OUTPUT_DIR);

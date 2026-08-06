@@ -1,7 +1,7 @@
 {
   "name": "ai-discussion",
   "productName": "AI讨论会",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "private": true,
   "description": "AI讨论会：内嵌多个 AI 网页、一句话群发并自动转发讨论的桌面主持台",
   "author": "yangcr-abaaba",
@@ -15,11 +15,20 @@
     "productName": "AI讨论会",
     "asar": false,
     "afterPack": "build/afterPack.js",
-    "directories": { "output": "../AI讨论会_V1.0" },
-    "files": ["src/**/*", "assets/**/*", "config/sites.json", "package.json"],
+    "directories": {
+      "output": "../AI讨论会_V2.0"
+    },
+    "files": [
+      "src/**/*",
+      "assets/**/*",
+      "config/sites.json",
+      "package.json"
+    ],
     "win": {
       "icon": "assets/icon.ico",
-      "target": ["nsis"]
+      "target": [
+        "nsis"
+      ]
     },
     "nsis": {
       "oneClick": false,

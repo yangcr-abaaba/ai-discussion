@@ -28,7 +28,7 @@
 
 ## 下载安装（普通用户）
 
-安装包：https://github.com/yangcr-abaaba/ai-discussion/releases/tag/v1.0.0
+安装包：https://github.com/yangcr-abaaba/ai-discussion/releases/tag/v2.0.0
 
 官网：https://yangcr-abaaba.github.io/ai-discussion/
 
